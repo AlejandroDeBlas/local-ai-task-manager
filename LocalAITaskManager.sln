@@ -1,0 +1,57 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{5ECFEF11-BDB7-4520-B4DD-FDDAD8EAA09E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LocalAITaskManager.Core", "src\LocalAITaskManager.Core\LocalAITaskManager.Core.csproj", "{8BDD57CD-056B-4AEE-813C-3B8C16F550BB}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LocalAITaskManager.Windows", "src\LocalAITaskManager.Windows\LocalAITaskManager.Windows.csproj", "{1D8AE0B5-1E61-4390-B038-43BB8CF36032}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LocalAITaskManager.App", "src\LocalAITaskManager.App\LocalAITaskManager.App.csproj", "{BEBB84A2-FCEF-4CAE-AE0C-F9A1BA89D524}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{CFB61E1D-7B6B-4D9E-A1BA-28CD9A12EF10}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LocalAITaskManager.Core.Tests", "tests\LocalAITaskManager.Core.Tests\LocalAITaskManager.Core.Tests.csproj", "{C5B6F512-E608-4A5A-AF84-F333CD550906}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LocalAITaskManager.Windows.Tests", "tests\LocalAITaskManager.Windows.Tests\LocalAITaskManager.Windows.Tests.csproj", "{C85BAE46-B890-4A8A-9BAF-43BE4F54B169}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{8BDD57CD-056B-4AEE-813C-3B8C16F550BB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8BDD57CD-056B-4AEE-813C-3B8C16F550BB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8BDD57CD-056B-4AEE-813C-3B8C16F550BB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8BDD57CD-056B-4AEE-813C-3B8C16F550BB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1D8AE0B5-1E61-4390-B038-43BB8CF36032}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1D8AE0B5-1E61-4390-B038-43BB8CF36032}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1D8AE0B5-1E61-4390-B038-43BB8CF36032}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1D8AE0B5-1E61-4390-B038-43BB8CF36032}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BEBB84A2-FCEF-4CAE-AE0C-F9A1BA89D524}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BEBB84A2-FCEF-4CAE-AE0C-F9A1BA89D524}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BEBB84A2-FCEF-4CAE-AE0C-F9A1BA89D524}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BEBB84A2-FCEF-4CAE-AE0C-F9A1BA89D524}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C5B6F512-E608-4A5A-AF84-F333CD550906}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C5B6F512-E608-4A5A-AF84-F333CD550906}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C5B6F512-E608-4A5A-AF84-F333CD550906}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C5B6F512-E608-4A5A-AF84-F333CD550906}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C85BAE46-B890-4A8A-9BAF-43BE4F54B169}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C85BAE46-B890-4A8A-9BAF-43BE4F54B169}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C85BAE46-B890-4A8A-9BAF-43BE4F54B169}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C85BAE46-B890-4A8A-9BAF-43BE4F54B169}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{8BDD57CD-056B-4AEE-813C-3B8C16F550BB} = {5ECFEF11-BDB7-4520-B4DD-FDDAD8EAA09E}
+		{1D8AE0B5-1E61-4390-B038-43BB8CF36032} = {5ECFEF11-BDB7-4520-B4DD-FDDAD8EAA09E}
+		{BEBB84A2-FCEF-4CAE-AE0C-F9A1BA89D524} = {5ECFEF11-BDB7-4520-B4DD-FDDAD8EAA09E}
+		{C5B6F512-E608-4A5A-AF84-F333CD550906} = {CFB61E1D-7B6B-4D9E-A1BA-28CD9A12EF10}
+		{C85BAE46-B890-4A8A-9BAF-43BE4F54B169} = {CFB61E1D-7B6B-4D9E-A1BA-28CD9A12EF10}
+	EndGlobalSection
+EndGlobal
