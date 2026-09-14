@@ -10,6 +10,7 @@ public sealed class OllamaRuntimeDetector : IRuntimeDetector
     private readonly TimeSpan _cacheDuration;
     private DateTimeOffset _lastProbeTime = DateTimeOffset.MinValue;
     private OllamaPsResponse? _cachedResponse;
+    private HashSet<int> _lastRunnerPids = [];
 
     public AiRuntimeKind Runtime => AiRuntimeKind.Ollama;
 
@@ -88,13 +89,28 @@ public sealed class OllamaRuntimeDetector : IRuntimeDetector
             }
         }
 
+        HashSet<int> currentRunnerPids = runnerCandidates.Select(r => r.Process.Pid).ToHashSet();
+        bool runnerSetChanged = !_lastRunnerPids.SetEquals(currentRunnerPids);
+
+        if (runnerSetChanged)
+        {
+            _cachedResponse = null;
+            _lastRunnerPids = currentRunnerPids;
+        }
+
         bool hasOllamaActivity = ollamaPids.Count > 0 || runnerCandidates.Count > 0 || identified.Count > 0;
+        if (!hasOllamaActivity)
+        {
+            _cachedResponse = null;
+            _lastRunnerPids.Clear();
+        }
+
         OllamaPsResponse? psResponse = null;
 
         if (hasOllamaActivity)
         {
             DateTimeOffset now = DateTimeOffset.UtcNow;
-            if (now - _lastProbeTime >= _cacheDuration)
+            if (runnerSetChanged || (now - _lastProbeTime >= _cacheDuration) || _cachedResponse == null)
             {
                 psResponse = await _apiClient.GetLoadedModelsAsync(cancellationToken).ConfigureAwait(false);
                 _cachedResponse = psResponse;

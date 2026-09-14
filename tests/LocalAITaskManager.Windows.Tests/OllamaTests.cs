@@ -254,4 +254,184 @@ public class OllamaTests
         // Both models preserved in UnmappedModels
         Assert.Equal(2, result.UnmappedModels.Count);
     }
+
+    private sealed class TrackingOllamaApiClient : IOllamaApiClient
+    {
+        public int CallCount { get; private set; }
+        public OllamaPsResponse? NextResponse { get; set; }
+
+        public TrackingOllamaApiClient(OllamaPsResponse? initialResponse)
+        {
+            NextResponse = initialResponse;
+        }
+
+        public Task<OllamaPsResponse?> GetLoadedModelsAsync(CancellationToken cancellationToken)
+        {
+            CallCount++;
+            return Task.FromResult(NextResponse);
+        }
+    }
+
+    [Fact]
+    public async Task OllamaRuntimeDetector_RunnerPidChange_InvalidatesCacheAndQueriesApi()
+    {
+        var modelA = new OllamaPsResponse
+        {
+            Models = [new() { Name = "qwen2.5:1.5b", SizeVram = 1300000000UL, ContextLength = 32768 }]
+        };
+        var modelB = new OllamaPsResponse
+        {
+            Models = [new() { Name = "llama3.2:3b", SizeVram = 2500000000UL, ContextLength = 8192 }]
+        };
+
+        var trackingClient = new TrackingOllamaApiClient(modelA);
+        var detector = new OllamaRuntimeDetector(trackingClient, TimeSpan.FromSeconds(10));
+
+        var runner100 = new GpuProcessSnapshot(
+            Pid: 100,
+            ProcessName: "llama-server.exe",
+            LocalGpuMemoryBytes: 1300000000,
+            NonLocalGpuMemoryBytes: 0,
+            TotalCommittedGpuMemoryBytes: 1300000000,
+            DedicatedGpuMemoryBytes: 1300000000,
+            SharedGpuMemoryBytes: 0,
+            WorkingSetBytes: null,
+            CpuPercent: null,
+            ExecutablePath: @"C:\Users\User\AppData\Local\Programs\Ollama\lib\ollama\llama-server.exe",
+            CommandLine: ""
+        );
+
+        var snapshot1 = new SystemSnapshot(DateTimeOffset.UtcNow, [], new SystemMemorySnapshot(null, null, null), [runner100], []);
+        var relationships = new ProcessRelationshipSnapshot(new Dictionary<int, int>());
+        var context1 = new WorkloadDetectionContext(snapshot1, relationships);
+
+        var result1 = await detector.DetectAsync(context1, CancellationToken.None);
+        Assert.Single(result1.IdentifiedProcesses);
+        Assert.Equal("qwen2.5:1.5b", result1.IdentifiedProcesses[0].Model?.DisplayName);
+        Assert.Equal(1, trackingClient.CallCount);
+
+        // Step 2: Runner PID 100 disappears, runner PID 200 appears
+        trackingClient.NextResponse = modelB;
+        var runner200 = new GpuProcessSnapshot(
+            Pid: 200,
+            ProcessName: "llama-server.exe",
+            LocalGpuMemoryBytes: 2500000000,
+            NonLocalGpuMemoryBytes: 0,
+            TotalCommittedGpuMemoryBytes: 2500000000,
+            DedicatedGpuMemoryBytes: 2500000000,
+            SharedGpuMemoryBytes: 0,
+            WorkingSetBytes: null,
+            CpuPercent: null,
+            ExecutablePath: @"C:\Users\User\AppData\Local\Programs\Ollama\lib\ollama\llama-server.exe",
+            CommandLine: ""
+        );
+
+        var snapshot2 = new SystemSnapshot(DateTimeOffset.UtcNow, [], new SystemMemorySnapshot(null, null, null), [runner200], []);
+        var context2 = new WorkloadDetectionContext(snapshot2, relationships);
+
+        var result2 = await detector.DetectAsync(context2, CancellationToken.None);
+        Assert.Single(result2.IdentifiedProcesses);
+        Assert.Equal(200, result2.IdentifiedProcesses[0].Pid);
+        Assert.Equal("llama3.2:3b", result2.IdentifiedProcesses[0].Model?.DisplayName);
+        Assert.Equal(2, trackingClient.CallCount);
+    }
+
+    [Fact]
+    public async Task OllamaRuntimeDetector_RunnerPidChange_ApiFails_DoesNotUseStaleModel()
+    {
+        var modelA = new OllamaPsResponse
+        {
+            Models = [new() { Name = "qwen2.5:1.5b", SizeVram = 1300000000UL, ContextLength = 32768 }]
+        };
+
+        var trackingClient = new TrackingOllamaApiClient(modelA);
+        var detector = new OllamaRuntimeDetector(trackingClient, TimeSpan.FromSeconds(10));
+
+        var runner100 = new GpuProcessSnapshot(
+            Pid: 100,
+            ProcessName: "llama-server.exe",
+            LocalGpuMemoryBytes: 1300000000,
+            NonLocalGpuMemoryBytes: 0,
+            TotalCommittedGpuMemoryBytes: 1300000000,
+            DedicatedGpuMemoryBytes: 1300000000,
+            SharedGpuMemoryBytes: 0,
+            WorkingSetBytes: null,
+            CpuPercent: null,
+            ExecutablePath: @"C:\Users\User\AppData\Local\Programs\Ollama\lib\ollama\llama-server.exe",
+            CommandLine: ""
+        );
+
+        var snapshot1 = new SystemSnapshot(DateTimeOffset.UtcNow, [], new SystemMemorySnapshot(null, null, null), [runner100], []);
+        var relationships = new ProcessRelationshipSnapshot(new Dictionary<int, int>());
+        var context1 = new WorkloadDetectionContext(snapshot1, relationships);
+
+        var result1 = await detector.DetectAsync(context1, CancellationToken.None);
+        Assert.Single(result1.IdentifiedProcesses);
+        Assert.Equal("qwen2.5:1.5b", result1.IdentifiedProcesses[0].Model?.DisplayName);
+
+        // Step 2: PID 200 appears, but API fails (returns null)
+        trackingClient.NextResponse = null;
+        var runner200 = new GpuProcessSnapshot(
+            Pid: 200,
+            ProcessName: "llama-server.exe",
+            LocalGpuMemoryBytes: 2500000000,
+            NonLocalGpuMemoryBytes: 0,
+            TotalCommittedGpuMemoryBytes: 2500000000,
+            DedicatedGpuMemoryBytes: 2500000000,
+            SharedGpuMemoryBytes: 0,
+            WorkingSetBytes: null,
+            CpuPercent: null,
+            ExecutablePath: @"C:\Users\User\AppData\Local\Programs\Ollama\lib\ollama\llama-server.exe",
+            CommandLine: ""
+        );
+
+        var snapshot2 = new SystemSnapshot(DateTimeOffset.UtcNow, [], new SystemMemorySnapshot(null, null, null), [runner200], []);
+        var context2 = new WorkloadDetectionContext(snapshot2, relationships);
+
+        var result2 = await detector.DetectAsync(context2, CancellationToken.None);
+        Assert.Single(result2.IdentifiedProcesses);
+        Assert.Equal(200, result2.IdentifiedProcesses[0].Pid);
+        Assert.Equal(AiRuntimeKind.Ollama, result2.IdentifiedProcesses[0].Runtime);
+        // CRITICAL: MUST NOT use stale model from PID 100!
+        Assert.Null(result2.IdentifiedProcesses[0].Model);
+        Assert.Equal(DetectionConfidence.None, result2.IdentifiedProcesses[0].ModelConfidence);
+    }
+
+    [Fact]
+    public async Task OllamaRuntimeDetector_SameRunnerWithinTtl_ReusesCacheWithoutQueryingApi()
+    {
+        var modelA = new OllamaPsResponse
+        {
+            Models = [new() { Name = "qwen2.5:1.5b", SizeVram = 1300000000UL, ContextLength = 32768 }]
+        };
+
+        var trackingClient = new TrackingOllamaApiClient(modelA);
+        var detector = new OllamaRuntimeDetector(trackingClient, TimeSpan.FromSeconds(10));
+
+        var runner100 = new GpuProcessSnapshot(
+            Pid: 100,
+            ProcessName: "llama-server.exe",
+            LocalGpuMemoryBytes: 1300000000,
+            NonLocalGpuMemoryBytes: 0,
+            TotalCommittedGpuMemoryBytes: 1300000000,
+            DedicatedGpuMemoryBytes: 1300000000,
+            SharedGpuMemoryBytes: 0,
+            WorkingSetBytes: null,
+            CpuPercent: null,
+            ExecutablePath: @"C:\Users\User\AppData\Local\Programs\Ollama\lib\ollama\llama-server.exe",
+            CommandLine: ""
+        );
+
+        var snapshot = new SystemSnapshot(DateTimeOffset.UtcNow, [], new SystemMemorySnapshot(null, null, null), [runner100], []);
+        var relationships = new ProcessRelationshipSnapshot(new Dictionary<int, int>());
+        var context = new WorkloadDetectionContext(snapshot, relationships);
+
+        var result1 = await detector.DetectAsync(context, CancellationToken.None);
+        Assert.Single(result1.IdentifiedProcesses);
+        Assert.Equal(1, trackingClient.CallCount);
+
+        var result2 = await detector.DetectAsync(context, CancellationToken.None);
+        Assert.Single(result2.IdentifiedProcesses);
+        Assert.Equal(1, trackingClient.CallCount);
+    }
 }

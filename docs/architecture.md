@@ -1,4 +1,4 @@
-﻿# Architecture Overview
+# Architecture Overview
 
 ## Technology Stack
 
@@ -32,9 +32,9 @@ LocalAITaskManager.Core (Domain entities, abstractions, formatters, pure logic)
    - Process hierarchy inspection via `CreateToolhelp32Snapshot` (`Process32FirstW` / `Process32NextW`).
    - Command line parsing using native `CommandLineToArgvW`.
    - Runtime-specific detectors:
-     - `OllamaRuntimeDetector` (HTTP loopback query to `/api/ps` with local caching).
-     - `LmStudioRuntimeDetector` (secure subprocess invocation of `lms ps --json` with local caching).
-     - `LlamaCppRuntimeDetector` (command line tokenizer for `-m`, `--model`, `-c`, `--models-dir`).
+     - `OllamaRuntimeDetector` (HTTP loopback query to `/api/ps` with runner PID set cache invalidation).
+     - `LmStudioRuntimeDetector` (process ancestry and executable path matching; model correlation deactivated/unvalidated per `UNKNOWN > WRONG`).
+     - `LlamaCppRuntimeDetector` (command line tokenizer; `High` confidence with structural flags, `Medium` for executable-only).
    - `WorkloadDetectionCoordinator`: coordinates detectors and enforces strict precedence rules (`Ollama` / `LM Studio` > generic `llama.cpp` fallback).
 
 3. **`LocalAITaskManager.App`**:
@@ -74,16 +74,16 @@ Win32 ──────────────► Snapshot     │
 
 ### Ollama
 * **Runtime Identity:** Process ancestry (descendant of `ollama.exe`), executable path (`...\Ollama\lib\...`), or direct executable match.
-* **Model Metadata:** Official loopback REST endpoint `GET http://127.0.0.1:11434/api/ps`.
+* **Model Metadata:** Official loopback REST endpoint `GET http://127.0.0.1:11434/api/ps` (cache invalidated instantly upon runner PID set change).
 * **GPU Memory:** Windows WDDM Local Usage.
 
 ### LM Studio
 * **Runtime Identity:** Process ancestry, executable path (`...\LM Studio\...`), or direct executable match.
-* **Loaded Model:** Official CLI `lms ps --json`.
+* **Loaded Model:** *Not validated / disabled* (model unassigned until daemon-less or verified schema is available).
 * **GPU Memory:** Windows WDDM Local Usage.
 
 ### Standalone llama.cpp
-* **Runtime Identity:** Executable name (`llama-server.exe`, `llama-cli.exe`) + valid command line flags.
+* **Runtime Identity:** Executable name (`llama-server.exe`, `llama-cli.exe`) + structural command line flags.
 * **Model:** `-m` / `--model` command line parameters; filename-based quantization inference.
 * **Context:** `-c` / `--ctx-size` command line parameters.
 * **GPU Memory:** Windows WDDM Local Usage.

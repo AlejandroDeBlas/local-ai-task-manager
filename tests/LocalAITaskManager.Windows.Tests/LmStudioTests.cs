@@ -9,80 +9,17 @@ namespace LocalAITaskManager.Windows.Tests;
 public class LmStudioTests
 {
     [Fact]
-    public void LmStudioCliParser_ArrayFormat_ParsesCorrectly()
+    public void LmStudioCliParser_ReturnsEmptyList_WhenModelDetectionDisabled()
     {
-        string json = @"
-[
-  {
-    ""identifier"": ""mistral-small"",
-    ""path"": ""C:\\Models\\mistral-small-Q4_K_M.gguf"",
-    ""contextLength"": 8192,
-    ""sizeBytes"": 14000000000
-  }
-]";
-
+        string json = @"[{ ""identifier"": ""test"", ""path"": ""C:\\Models\\test.gguf"" }]";
         var models = LmStudioCliParser.ParseModels(json);
-        Assert.Single(models);
-        Assert.Equal("mistral-small", models[0].Identifier);
-        Assert.Equal(@"C:\Models\mistral-small-Q4_K_M.gguf", models[0].Path);
-        Assert.Equal(8192, models[0].ContextLength);
-        Assert.Equal(14000000000UL, models[0].SizeBytes);
+        Assert.Empty(models);
     }
 
     [Fact]
-    public void LmStudioCliParser_ObjectFormat_ParsesCorrectly()
+    public async Task LmStudioRuntimeDetector_ChildProcess_IdentifiedWithMediumConfidenceAndModelNull()
     {
-        string json = @"
-{
-  ""models"": [
-    {
-      ""modelKey"": ""qwen2.5-coder"",
-      ""context_length"": 16384,
-      ""size_bytes"": 9000000000
-    }
-  ]
-}";
-
-        var models = LmStudioCliParser.ParseModels(json);
-        Assert.Single(models);
-        Assert.Equal("qwen2.5-coder", models[0].ModelKey);
-        Assert.Equal(16384, models[0].ContextLength);
-        Assert.Equal(9000000000UL, models[0].SizeBytes);
-    }
-
-    [Fact]
-    public void LmStudioCliParser_InvalidOrEmpty_ReturnsEmptyList()
-    {
-        Assert.Empty(LmStudioCliParser.ParseModels(""));
-        Assert.Empty(LmStudioCliParser.ParseModels("invalid json"));
-        Assert.Empty(LmStudioCliParser.ParseModels("{}"));
-    }
-
-    private sealed class MockCommandRunner : ILocalCommandRunner
-    {
-        private readonly CommandExecutionResult _result;
-
-        public MockCommandRunner(CommandExecutionResult result)
-        {
-            _result = result;
-        }
-
-        public Task<CommandExecutionResult> ExecuteAsync(
-            string executablePath,
-            IReadOnlyList<string> arguments,
-            TimeSpan timeout,
-            CancellationToken cancellationToken)
-        {
-            return Task.FromResult(_result);
-        }
-    }
-
-    [Fact]
-    public async Task LmStudioRuntimeDetector_OneModelOneRunner_CorrelatesUnambiguously()
-    {
-        string json = @"[{ ""identifier"": ""qwen2.5-14b"", ""path"": ""C:\\Models\\qwen-Q4_K_M.gguf"", ""contextLength"": 32768 }]";
-        var mockRunner = new MockCommandRunner(new CommandExecutionResult(0, json, "", false));
-        var detector = new LmStudioRuntimeDetector(mockRunner, cliPathResolver: () => @"C:\Mock\lms.exe");
+        var detector = new LmStudioRuntimeDetector();
 
         var runner = new GpuProcessSnapshot(
             Pid: 5000,
@@ -114,10 +51,50 @@ public class LmStudioTests
         var proc = result.IdentifiedProcesses[0];
         Assert.Equal(5000, proc.Pid);
         Assert.Equal(AiRuntimeKind.LmStudio, proc.Runtime);
-        Assert.NotNull(proc.Model);
-        Assert.Equal("qwen2.5-14b", proc.Model.DisplayName);
-        Assert.Equal("Q4_K_M", proc.Model.Quantization);
-        Assert.Equal(32768, proc.Model.ContextLength);
+        Assert.Equal(DetectionConfidence.Medium, proc.RuntimeConfidence);
+        Assert.Null(proc.Model);
+        Assert.Equal(DetectionConfidence.None, proc.ModelConfidence);
+        Assert.Empty(result.UnmappedModels);
+    }
+
+    [Fact]
+    public async Task LmStudioRuntimeDetector_DirectExecutable_IdentifiedWithConfirmedConfidenceAndModelNull()
+    {
+        var detector = new LmStudioRuntimeDetector();
+
+        var proc = new GpuProcessSnapshot(
+            Pid: 5001,
+            ProcessName: "LM Studio.exe",
+            LocalGpuMemoryBytes: 2000000000,
+            NonLocalGpuMemoryBytes: 0,
+            TotalCommittedGpuMemoryBytes: 2000000000,
+            DedicatedGpuMemoryBytes: 2000000000,
+            SharedGpuMemoryBytes: 0,
+            WorkingSetBytes: null,
+            CpuPercent: null,
+            ExecutablePath: @"C:\Users\User\AppData\Local\Programs\LM Studio\LM Studio.exe",
+            CommandLine: ""
+        );
+
+        var telemetrySnapshot = new SystemSnapshot(DateTimeOffset.UtcNow,
+            Gpus: [],
+            Memory: new SystemMemorySnapshot(null, null, null),
+            GpuProcesses: [proc],
+            Warnings: []
+        );
+
+        var relationships = new ProcessRelationshipSnapshot(new Dictionary<int, int>());
+        var context = new WorkloadDetectionContext(telemetrySnapshot, relationships);
+
+        var result = await detector.DetectAsync(context, CancellationToken.None);
+
+        Assert.Single(result.IdentifiedProcesses);
+        var identified = result.IdentifiedProcesses[0];
+        Assert.Equal(5001, identified.Pid);
+        Assert.Equal(AiRuntimeKind.LmStudio, identified.Runtime);
+        Assert.Equal(DetectionConfidence.Confirmed, identified.RuntimeConfidence);
+        Assert.Null(identified.Model);
+        Assert.Equal(DetectionConfidence.None, identified.ModelConfidence);
     }
 }
 

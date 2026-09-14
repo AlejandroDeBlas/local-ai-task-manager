@@ -7,31 +7,27 @@ namespace LocalAITaskManager.Windows.Detection.LmStudio;
 
 public sealed class LmStudioRuntimeDetector : IRuntimeDetector
 {
-    private readonly ILocalCommandRunner _commandRunner;
+    private readonly ILocalCommandRunner? _commandRunner;
     private readonly TimeSpan _cacheDuration;
     private readonly Func<string?> _cliPathResolver;
-    private DateTimeOffset _lastProbeTime = DateTimeOffset.MinValue;
-    private List<LmStudioLoadedModel> _cachedModels = [];
 
     public AiRuntimeKind Runtime => AiRuntimeKind.LmStudio;
 
     public LmStudioRuntimeDetector(
-        ILocalCommandRunner commandRunner,
+        ILocalCommandRunner? commandRunner = null,
         TimeSpan? cacheDuration = null,
         Func<string?>? cliPathResolver = null)
     {
-        _commandRunner = commandRunner ?? throw new ArgumentNullException(nameof(commandRunner));
+        _commandRunner = commandRunner;
         _cacheDuration = cacheDuration ?? TimeSpan.FromSeconds(3);
         _cliPathResolver = cliPathResolver ?? ResolveLmsCliPath;
     }
 
-    public async Task<RuntimeDetectionResult> DetectAsync(
+    public Task<RuntimeDetectionResult> DetectAsync(
         WorkloadDetectionContext context,
         CancellationToken cancellationToken)
     {
         var identified = new List<AiProcessIdentity>();
-        var runnerCandidates = new List<(GpuProcessSnapshot Process, List<DetectionEvidence> Evidence)>();
-
         HashSet<int> lmsPids = FindLmStudioProcessIds();
 
         foreach (GpuProcessSnapshot process in context.TelemetrySnapshot.GpuProcesses)
@@ -47,8 +43,10 @@ public sealed class LmStudioRuntimeDetector : IRuntimeDetector
                 procName = procName[..^4];
             }
 
-            if (procName.Equals("LM Studio", StringComparison.OrdinalIgnoreCase) ||
-                procName.Equals("lms", StringComparison.OrdinalIgnoreCase))
+            bool isDirectExecutable = procName.Equals("LM Studio", StringComparison.OrdinalIgnoreCase) ||
+                                      procName.Equals("lms", StringComparison.OrdinalIgnoreCase);
+
+            if (isDirectExecutable)
             {
                 isLmStudio = true;
                 evidence.Add(new(DetectionEvidenceKind.ExecutableName, $"Process is {process.ProcessName}"));
@@ -73,145 +71,20 @@ public sealed class LmStudioRuntimeDetector : IRuntimeDetector
 
             if (isLmStudio)
             {
-                bool isRunner = !procName.Equals("LM Studio", StringComparison.OrdinalIgnoreCase) &&
-                                !procName.Equals("lms", StringComparison.OrdinalIgnoreCase);
-
-                if (isRunner)
-                {
-                    runnerCandidates.Add((process, evidence));
-                }
-                else
-                {
-                    identified.Add(new AiProcessIdentity(
-                        Pid: process.Pid,
-                        Runtime: AiRuntimeKind.LmStudio,
-                        RuntimeConfidence: DetectionConfidence.Confirmed,
-                        Model: null,
-                        ModelConfidence: DetectionConfidence.None,
-                        Evidence: evidence
-                    ));
-                }
-            }
-        }
-
-        bool hasLmStudioActivity = lmsPids.Count > 0 || runnerCandidates.Count > 0 || identified.Count > 0;
-        List<LmStudioLoadedModel> loadedModels = [];
-
-        if (hasLmStudioActivity)
-        {
-            DateTimeOffset now = DateTimeOffset.UtcNow;
-            if (now - _lastProbeTime >= _cacheDuration)
-            {
-                string? lmsExe = _cliPathResolver();
-                if (!string.IsNullOrEmpty(lmsExe))
-                {
-                    var result = await _commandRunner.ExecuteAsync(
-                        lmsExe,
-                        ["ps", "--json"],
-                        TimeSpan.FromSeconds(2),
-                        cancellationToken
-                    ).ConfigureAwait(false);
-
-                    if (result.ExitCode == 0 && !string.IsNullOrWhiteSpace(result.StandardOutput))
-                    {
-                        _cachedModels = LmStudioCliParser.ParseModels(result.StandardOutput);
-                    }
-                    else
-                    {
-                        _cachedModels = [];
-                    }
-                }
-                else
-                {
-                    _cachedModels = [];
-                }
-                _lastProbeTime = now;
-            }
-
-            loadedModels = _cachedModels;
-        }
-
-        var unmappedModels = new List<RuntimeModelObservation>();
-
-        if (loadedModels.Count == 1 && runnerCandidates.Count == 1)
-        {
-            var (runnerProcess, runnerEvidence) = runnerCandidates[0];
-            LmStudioLoadedModel modelItem = loadedModels[0];
-
-            runnerEvidence.Add(new(DetectionEvidenceKind.OfficialCli, "LM Studio lms ps --json reported one loaded model"));
-            runnerEvidence.Add(new(DetectionEvidenceKind.OfficialCli, "Unambiguous 1:1 runner to model correlation"));
-
-            string displayName = modelItem.Identifier ?? modelItem.ModelKey ??
-                (!string.IsNullOrWhiteSpace(modelItem.Path) ? Path.GetFileNameWithoutExtension(modelItem.Path) : "Unknown LM Studio Model");
-
-            string? quant = GgufQuantizationInference.InferFromFileName(modelItem.Path ?? displayName);
-            if (quant is not null)
-            {
-                runnerEvidence.Add(new(DetectionEvidenceKind.FilenameInference, $"Quantization {quant} inferred from model path"));
-            }
-
-            var modelIdentity = new DetectedModelIdentity(
-                DisplayName: displayName,
-                ModelPath: modelItem.Path,
-                Quantization: quant,
-                Architecture: null,
-                ParameterSize: null,
-                ContextLength: modelItem.ContextLength,
-                RuntimeReportedVramBytes: modelItem.SizeBytes
-            );
-
-            identified.Add(new AiProcessIdentity(
-                Pid: runnerProcess.Pid,
-                Runtime: AiRuntimeKind.LmStudio,
-                RuntimeConfidence: DetectionConfidence.Confirmed,
-                Model: modelIdentity,
-                ModelConfidence: DetectionConfidence.Confirmed,
-                Evidence: runnerEvidence
-            ));
-        }
-        else
-        {
-            if (loadedModels.Count > 1 || (loadedModels.Count > 0 && runnerCandidates.Count != loadedModels.Count))
-            {
-                foreach (LmStudioLoadedModel item in loadedModels)
-                {
-                    string displayName = item.Identifier ?? item.ModelKey ??
-                        (!string.IsNullOrWhiteSpace(item.Path) ? Path.GetFileNameWithoutExtension(item.Path) : "Unknown LM Studio Model");
-
-                    string? quant = GgufQuantizationInference.InferFromFileName(item.Path ?? displayName);
-
-                    var modelIdentity = new DetectedModelIdentity(
-                        DisplayName: displayName,
-                        ModelPath: item.Path,
-                        Quantization: quant,
-                        Architecture: null,
-                        ParameterSize: null,
-                        ContextLength: item.ContextLength,
-                        RuntimeReportedVramBytes: item.SizeBytes
-                    );
-                    unmappedModels.Add(new RuntimeModelObservation(AiRuntimeKind.LmStudio, modelIdentity, item.SizeBytes));
-                }
-            }
-
-            foreach (var (runnerProcess, runnerEvidence) in runnerCandidates)
-            {
-                if (loadedModels.Count > 1)
-                {
-                    runnerEvidence.Add(new(DetectionEvidenceKind.OfficialCli, "Multiple models loaded in LM Studio; runner mapping is ambiguous"));
-                }
+                evidence.Add(new(DetectionEvidenceKind.ExecutablePath, "LM Studio model detection is disabled/not validated; model left unassigned"));
 
                 identified.Add(new AiProcessIdentity(
-                    Pid: runnerProcess.Pid,
+                    Pid: process.Pid,
                     Runtime: AiRuntimeKind.LmStudio,
-                    RuntimeConfidence: DetectionConfidence.Confirmed,
+                    RuntimeConfidence: isDirectExecutable ? DetectionConfidence.Confirmed : DetectionConfidence.Medium,
                     Model: null,
                     ModelConfidence: DetectionConfidence.None,
-                    Evidence: runnerEvidence
+                    Evidence: evidence
                 ));
             }
         }
 
-        return new RuntimeDetectionResult(identified, unmappedModels, []);
+        return Task.FromResult(new RuntimeDetectionResult(identified, [], []));
     }
 
     private static HashSet<int> FindLmStudioProcessIds()

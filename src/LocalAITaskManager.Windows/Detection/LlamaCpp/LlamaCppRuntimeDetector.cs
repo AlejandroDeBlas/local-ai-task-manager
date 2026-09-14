@@ -54,6 +54,7 @@ public sealed class LlamaCppRuntimeDetector : IRuntimeDetector
             string? modelPath = null;
             bool usesModelsDir = false;
             int? contextLength = null;
+            bool hasStructuralFlags = false;
 
             if (!string.IsNullOrWhiteSpace(process.CommandLine))
             {
@@ -65,6 +66,7 @@ public sealed class LlamaCppRuntimeDetector : IRuntimeDetector
                     if (arg.Equals("-m", StringComparison.OrdinalIgnoreCase) ||
                         arg.Equals("--model", StringComparison.OrdinalIgnoreCase))
                     {
+                        hasStructuralFlags = true;
                         if (i + 1 < args.Count && !args[i + 1].StartsWith('-'))
                         {
                             modelPath = args[i + 1];
@@ -74,16 +76,19 @@ public sealed class LlamaCppRuntimeDetector : IRuntimeDetector
                     }
                     else if (arg.StartsWith("--model=", StringComparison.OrdinalIgnoreCase))
                     {
+                        hasStructuralFlags = true;
                         modelPath = arg["--model=".Length..].Trim('\"');
                         evidence.Add(new(DetectionEvidenceKind.CommandLine, "--model= argument found"));
                     }
                     else if (arg.StartsWith("-m=", StringComparison.OrdinalIgnoreCase))
                     {
+                        hasStructuralFlags = true;
                         modelPath = arg["-m=".Length..].Trim('\"');
                         evidence.Add(new(DetectionEvidenceKind.CommandLine, "-m= argument found"));
                     }
                     else if (arg.Equals("--models-dir", StringComparison.OrdinalIgnoreCase))
                     {
+                        hasStructuralFlags = true;
                         usesModelsDir = true;
                         evidence.Add(new(DetectionEvidenceKind.CommandLine, "--models-dir argument found"));
                         if (i + 1 < args.Count && !args[i + 1].StartsWith('-'))
@@ -93,12 +98,14 @@ public sealed class LlamaCppRuntimeDetector : IRuntimeDetector
                     }
                     else if (arg.StartsWith("--models-dir=", StringComparison.OrdinalIgnoreCase))
                     {
+                        hasStructuralFlags = true;
                         usesModelsDir = true;
                         evidence.Add(new(DetectionEvidenceKind.CommandLine, "--models-dir= argument found"));
                     }
                     else if (arg.Equals("-c", StringComparison.OrdinalIgnoreCase) ||
                              arg.Equals("--ctx-size", StringComparison.OrdinalIgnoreCase))
                     {
+                        hasStructuralFlags = true;
                         if (i + 1 < args.Count && int.TryParse(args[i + 1], out int parsedCtx))
                         {
                             contextLength = parsedCtx;
@@ -108,6 +115,7 @@ public sealed class LlamaCppRuntimeDetector : IRuntimeDetector
                     }
                     else if (arg.StartsWith("--ctx-size=", StringComparison.OrdinalIgnoreCase))
                     {
+                        hasStructuralFlags = true;
                         string val = arg["--ctx-size=".Length..].Trim('\"');
                         if (int.TryParse(val, out int parsedCtx))
                         {
@@ -117,6 +125,7 @@ public sealed class LlamaCppRuntimeDetector : IRuntimeDetector
                     }
                     else if (arg.StartsWith("-c=", StringComparison.OrdinalIgnoreCase))
                     {
+                        hasStructuralFlags = true;
                         string val = arg["-c=".Length..].Trim('\"');
                         if (int.TryParse(val, out int parsedCtx))
                         {
@@ -154,10 +163,14 @@ public sealed class LlamaCppRuntimeDetector : IRuntimeDetector
                 evidence.Add(new(DetectionEvidenceKind.CommandLine, "llama.cpp server using models directory; active model cannot be determined from arguments"));
             }
 
+            DetectionConfidence runtimeConfidence = hasStructuralFlags
+                ? DetectionConfidence.High
+                : DetectionConfidence.Medium;
+
             identified.Add(new AiProcessIdentity(
                 Pid: process.Pid,
                 Runtime: AiRuntimeKind.LlamaCpp,
-                RuntimeConfidence: DetectionConfidence.High,
+                RuntimeConfidence: runtimeConfidence,
                 Model: model,
                 ModelConfidence: modelConfidence,
                 Evidence: evidence

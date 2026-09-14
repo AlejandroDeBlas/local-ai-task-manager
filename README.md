@@ -1,4 +1,4 @@
-﻿# Local AI Task Manager
+# Local AI Task Manager
 
 Task Manager for Local AI.
 
@@ -39,12 +39,12 @@ Local AI Task Manager is an experimental, zero-configuration Windows desktop uti
 **Runtime Detection:**
 * standalone `llama.cpp` / `llama-server`
 * `Ollama`
-* `LM Studio`
+* `LM Studio` (experimental runtime / model detection not validated)
 
 **Model Detection:**
-* `llama.cpp`: direct `-m` / `--model`, `-c` / `--ctx-size`, GGUF filename quantization inference
-* `Ollama`: official local loopback `/api/ps` endpoint (model, quantization, parameters, context, VRAM size)
-* `LM Studio`: official `lms ps --json` CLI integration
+* `llama.cpp`: direct `-m` / `--model`, `-c` / `--ctx-size`, GGUF filename quantization inference (`High` confidence with structural flags, `Medium` for executable-only)
+* `Ollama`: official local loopback `/api/ps` endpoint (model, quantization, parameters, context, VRAM size; cache invalidated instantly on runner PID set changes)
+* `LM Studio`: model detection not validated / disabled (process identified, model left unassigned per UNKNOWN > WRONG)
 
 ### Not Yet (Future Phases)
 * ComfyUI
@@ -66,9 +66,9 @@ Local AI Task Manager strictly adheres to the principle of never guessing. If an
 
 | Target | Runtime Identity | Model Metadata | GPU Memory |
 | :--- | :--- | :--- | :--- |
-| **Ollama** | Process ancestry (`ollama.exe`), executable path (`...\Ollama\lib\...`) | Official loopback API `GET /api/ps` | Windows WDDM Local Usage |
-| **LM Studio** | Process ancestry, executable path (`...\LM Studio\...`) | Official CLI `lms ps --json` | Windows WDDM Local Usage |
-| **standalone llama.cpp** | Executable name (`llama-server.exe`, `llama-cli.exe`), command line flags | `-m` / `--model` arguments, `-c` context, filename quantization inference | Windows WDDM Local Usage |
+| **Ollama** | Process ancestry (`ollama.exe`), executable path (`...\Ollama\lib\...`) | Official loopback API `GET /api/ps` (runner PID set invalidated cache) | Windows WDDM Local Usage |
+| **LM Studio** | Process ancestry, executable path (`...\LM Studio\...`) | *Not validated / disabled* (model unassigned) | Windows WDDM Local Usage |
+| **standalone llama.cpp** | Executable name (`llama-server.exe`, `llama-cli.exe`) + structural flags | `-m` / `--model` arguments, `-c` context, filename quantization inference | Windows WDDM Local Usage |
 
 ---
 
@@ -103,7 +103,7 @@ Under Windows WDDM, `Local Usage` represents memory physically resident on the d
 
 * **Zero external telemetry**: No data collection, analytics, or outbound internet traffic.
 * **Loopback-only probing**: The Ollama client strictly communicates with `http://127.0.0.1:11434/api/ps` with short timeouts (500ms) and no proxies.
-* **Controlled subprocess execution**: LM Studio model queries invoke `lms ps --json` directly without invoking command shells (`cmd.exe`, `powershell.exe`) or PATH fallbacks.
+* **Controlled subprocess execution**: Subprocess execution for unvalidated tools is deactivated to prevent launching unauthorized background daemons or triggering unexpected side-effects.
 * **No command line exposure**: Arguments and sensitive file paths are never written to disk, sent across networks, or exposed beyond the local inspector.
 
 ## Building & Running
