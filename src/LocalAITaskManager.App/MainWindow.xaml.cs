@@ -2,6 +2,10 @@ using System.ComponentModel;
 using System.Windows;
 using LocalAITaskManager.App.Services;
 using LocalAITaskManager.App.ViewModels;
+using LocalAITaskManager.Windows.Detection;
+using LocalAITaskManager.Windows.Detection.LlamaCpp;
+using LocalAITaskManager.Windows.Detection.LmStudio;
+using LocalAITaskManager.Windows.Detection.Ollama;
 using LocalAITaskManager.Windows.Memory;
 using LocalAITaskManager.Windows.Nvidia;
 using LocalAITaskManager.Windows.PerformanceCounters;
@@ -17,6 +21,7 @@ public partial class MainWindow : Window
     private readonly PdhGpuProcessMemoryProvider _pdhProvider;
     private readonly WindowsSystemSnapshotProvider _snapshotProvider;
     private readonly TelemetrySamplerService _samplerService;
+    private readonly OllamaApiClient _ollamaClient;
 
     public MainWindow()
     {
@@ -39,9 +44,24 @@ public partial class MainWindow : Window
             cpuSampler
         );
 
+        var cmdParser = new WindowsCommandLineParser();
+        var commandRunner = new ProcessLocalCommandRunner();
+        var relationshipProvider = new Win32ProcessRelationshipProvider();
+
+        _ollamaClient = new OllamaApiClient();
+        var llamaDetector = new LlamaCppRuntimeDetector(cmdParser);
+        var ollamaDetector = new OllamaRuntimeDetector(_ollamaClient);
+        var lmsDetector = new LmStudioRuntimeDetector(commandRunner);
+
+        var coordinator = new WorkloadDetectionCoordinator(
+            relationshipProvider,
+            [ollamaDetector, lmsDetector, llamaDetector]
+        );
+
         _samplerService = new TelemetrySamplerService(
             _snapshotProvider,
-            snapshot => Dispatcher.InvokeAsync(() => _viewModel.UpdateSnapshot(snapshot))
+            (snapshot, detection) => Dispatcher.InvokeAsync(() => _viewModel.UpdateSnapshot(snapshot, detection)),
+            coordinator
         );
 
         Loaded += OnLoaded;
@@ -67,5 +87,6 @@ public partial class MainWindow : Window
 
         _gpuProvider.Dispose();
         _pdhProvider.Dispose();
+        _ollamaClient.Dispose();
     }
 }

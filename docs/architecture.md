@@ -1,4 +1,4 @@
-# Architecture Overview
+﻿# Architecture Overview
 
 ## Technology Stack
 
@@ -13,7 +13,7 @@
 LocalAITaskManager.App (WPF GUI, ViewModels, Dispatcher orchestration)
          │
          ▼
-LocalAITaskManager.Windows (P/Invoke, NVML, PDH, Win32 RAM, WMI Process metadata)
+LocalAITaskManager.Windows (P/Invoke, NVML, PDH, Win32 RAM, Process ancestry, Workload Detectors)
          │
          ▼
 LocalAITaskManager.Core (Domain entities, abstractions, formatters, pure logic)
@@ -21,40 +21,78 @@ LocalAITaskManager.Core (Domain entities, abstractions, formatters, pure logic)
 
 1. **`LocalAITaskManager.Core`**:
    - Zero Windows dependencies (can be referenced by cross-platform libraries/tests).
-   - Contains immutable domain snapshots (`SystemSnapshot`, `GpuDeviceSnapshot`, `GpuProcessSnapshot`).
-   - Abstractions: `IGpuTelemetryProvider`, `IGpuProcessMemoryProvider`, `ISystemMemoryProvider`, `IProcessInfoProvider`, `ISystemSnapshotProvider`.
-   - Pure math and logic: `ProcessCpuCalculator`, `GpuProcessMemoryAggregator`, `ByteFormatter`.
+   - Contains immutable domain snapshots (`SystemSnapshot`, `DetectionSnapshot`, `AiProcessIdentity`, `DetectedModelIdentity`).
+   - Abstractions: `IGpuTelemetryProvider`, `IGpuProcessMemoryProvider`, `ISystemMemoryProvider`, `IProcessInfoProvider`, `ISystemSnapshotProvider`, `IProcessRelationshipProvider`, `ICommandLineParser`, `ILocalCommandRunner`, `IRuntimeDetector`, `IWorkloadDetectionCoordinator`.
+   - Pure math and logic: `ProcessCpuCalculator`, `GpuProcessMemoryAggregator`, `ByteFormatter`, `GgufQuantizationInference`.
 
 2. **`LocalAITaskManager.Windows`**:
    - Interacts with operating system and hardware drivers directly.
    - P/Invoke bindings for NVIDIA Management Library (NVML) and Performance Data Helper (`pdh.dll`).
    - Win32 memory queries via `GlobalMemoryStatusEx`.
-   - Process image inspection via `OpenProcess` with `PROCESS_QUERY_LIMITED_INFORMATION` and `QueryFullProcessImageNameW`.
-   - Command line inspection via WMI `Win32_Process.CommandLine` with strict PID-based caching.
+   - Process hierarchy inspection via `CreateToolhelp32Snapshot` (`Process32FirstW` / `Process32NextW`).
+   - Command line parsing using native `CommandLineToArgvW`.
+   - Runtime-specific detectors:
+     - `OllamaRuntimeDetector` (HTTP loopback query to `/api/ps` with local caching).
+     - `LmStudioRuntimeDetector` (secure subprocess invocation of `lms ps --json` with local caching).
+     - `LlamaCppRuntimeDetector` (command line tokenizer for `-m`, `--model`, `-c`, `--models-dir`).
+   - `WorkloadDetectionCoordinator`: coordinates detectors and enforces strict precedence rules (`Ollama` / `LM Studio` > generic `llama.cpp` fallback).
 
 3. **`LocalAITaskManager.App`**:
    - WPF application providing MVVM view models and views.
    - Background sampling loop running at ~1 Hz using `PeriodicTimer`.
-   - Threading isolation: collectors run asynchronously in the background, never blocking the UI thread.
+   - Threading isolation: collectors and detectors run asynchronously in the background, never blocking the UI thread.
    - Dispatcher synchronization publishes immutable snapshots to observable view models.
 
-## Telemetry Flow
+## Telemetry & Detection Flow
 
 ```text
-NVML (Global GPU, VRAM, temp, power) ───────────┐
-PDH / GPU Process Memory                        │
- ├─ Local Usage (Primary process VRAM)          │
- ├─ Non Local Usage                             ├──> WindowsSystemSnapshotProvider
- ├─ Total Committed                             │               │
- ├─ Dedicated Usage                             │               ▼
- └─ Shared Usage ───────────────────────────────┤         SystemSnapshot (Immutable)
-Win32 RAM (Physical total/used memory) ─────────┤               │
-Process APIs (Working set, CPU time) ───────────┤               ▼
-WMI metadata (Cached command line) ─────────────┘         MainViewModel
-                                                                │
-                                                                ▼
-                                                            WPF View
+                    ┌──────────────┐
+NVML ───────────────►              │
+PDH ────────────────► System       │
+Win32 ──────────────► Snapshot     │
+                    └──────┬───────┘
+                           │
+                           ▼
+               WorkloadDetectionCoordinator
+                 │         │          │
+                 ▼         ▼          ▼
+             llama.cpp   Ollama    LM Studio
+              detector   detector    detector
+                 │         │          │
+                 └─────────┼──────────┘
+                           ▼
+                    DetectionSnapshot
+                           │
+                           ▼
+                       MainViewModel
+                           │
+                           ▼
+                       WPF View
 ```
+
+## Source-of-Truth Hierarchy
+
+### Ollama
+* **Runtime Identity:** Process ancestry (descendant of `ollama.exe`), executable path (`...\Ollama\lib\...`), or direct executable match.
+* **Model Metadata:** Official loopback REST endpoint `GET http://127.0.0.1:11434/api/ps`.
+* **GPU Memory:** Windows WDDM Local Usage.
+
+### LM Studio
+* **Runtime Identity:** Process ancestry, executable path (`...\LM Studio\...`), or direct executable match.
+* **Loaded Model:** Official CLI `lms ps --json`.
+* **GPU Memory:** Windows WDDM Local Usage.
+
+### Standalone llama.cpp
+* **Runtime Identity:** Executable name (`llama-server.exe`, `llama-cli.exe`) + valid command line flags.
+* **Model:** `-m` / `--model` command line parameters; filename-based quantization inference.
+* **Context:** `-c` / `--ctx-size` command line parameters.
+* **GPU Memory:** Windows WDDM Local Usage.
+
+## Precedence & The "UNKNOWN > WRONG" Principle
+
+1. **Precedence:** `llama-server.exe` can be used as a backend for multiple runtimes (e.g. Ollama or standalone). `WorkloadDetectionCoordinator` prioritizes specific runtime evidence (`Ollama`, `LM Studio`) with `Confirmed` confidence over generic `llama.cpp` detection with `High` confidence. An Ollama runner process is never incorrectly classified as standalone `llama.cpp`.
+2. **Ambiguity Handling:** When Ollama reports multiple loaded models and multiple runner processes exist without a deterministic 1:1 mapping, the coordinator identifies the processes as Ollama runners while setting `Model = null` and preserving the models in `UnmappedModels`.
+3. **Non-AI Workloads:** Generic processes using GPU memory (such as `python.exe` or `dwm.exe`) without verifiable AI evidence remain classified as `Unknown` (`—`) to prevent false attribution.
 
 ## Why Process VRAM Does Not Use NVML Under WDDM
 
@@ -63,21 +101,9 @@ On Windows desktop systems using standard GeForce and RTX drivers, the GPU opera
 As officially documented in NVIDIA's NVML API documentation:
 > Under Windows WDDM mode, `nvmlProcessInfo_t.usedGpuMemory` is reported as `NVML_VALUE_NOT_AVAILABLE` because memory management is handled by Windows KMD.
 
-Consequently, querying `nvmlDeviceGetComputeRunningProcesses` or `nvmlDeviceGetGraphicsRunningProcesses` yields `usedGpuMemory = NVML_VALUE_NOT_AVAILABLE` for process memory allocations.
-
 To obtain accurate, per-process GPU memory without requiring elevated privileges, **Local AI Task Manager** queries the Windows Performance Data Helper (PDH) counter set `\GPU Process Memory(*)`:
-* **`Local Usage` (Primary process "VRAM" metric):** Memory currently resident on the local video memory of the GPU adapter. This serves as the closest operational metric for physical VRAM consumption by the process.
+* **`Local Usage` (Primary process "VRAM" metric):** Memory currently resident on the local video memory of the GPU adapter.
 * **`Non Local Usage`:** Memory allocated by or on behalf of the process residing outside the GPU adapter's local memory (e.g. system RAM).
 * **`Total Committed`:** Total virtual video memory currently committed by the video memory manager for this process.
-* **`Dedicated Usage`:** Dedicated memory allocated across the process lifetime (which may differ from actively resident local memory).
+* **`Dedicated Usage`:** Dedicated memory allocated across the process lifetime.
 * **`Shared Usage`:** System memory shared with the GPU.
-
-Instance strings (e.g. `pid_18420_luid_0x00000000_0x0000ABCD_phys_0#1`) are parsed using `GpuProcessCounterInstanceParser` and aggregated by PID across physical adapters. Duplicate instance suffixes (`#1`, `#2`) are treated as distinct legitimate counter instances and aggregated accordingly.
-
-## Process Metadata & CPU Sampling
-
-* **Command Line Caching:** Querying WMI `Win32_Process` is computationally expensive. The provider maintains a thread-safe cache by PID. When a PID is observed with GPU memory for the first time, its command line is queried once. The entry is maintained until the PID disappears from the snapshot.
-* **CPU Utilization:** Win32 does not provide an instantaneous CPU% per process. Instead, `Process.TotalProcessorTime` is sampled across intervals. The CPU usage is computed as:
-  $$\text{CPU \%} = \frac{\Delta \text{TotalProcessorTime}}{\Delta \text{WallClock} \times \text{Environment.ProcessorCount}} \times 100$$
-  The first sample yields `null` to avoid fabricating metrics. Dead processes have their state purged automatically.
-* **Unavailable vs Zero:** All domain models explicitly preserve `null` for unavailable or inaccessible metrics (e.g. Working Set of a terminated process, failed NVML memory readings, or invalid PDH `CStatus`).

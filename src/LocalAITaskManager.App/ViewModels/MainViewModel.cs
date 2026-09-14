@@ -69,7 +69,7 @@ public sealed class MainViewModel : ViewModelBase
 
     public bool HasProcessWarning => !string.IsNullOrEmpty(ProcessWarningMessage);
 
-    public void UpdateSnapshot(SystemSnapshot snapshot)
+    public void UpdateSnapshot(SystemSnapshot snapshot, DetectionSnapshot? detection = null)
     {
         // 1. Warnings
         string? gpuWarn = snapshot.Warnings.FirstOrDefault(w => w.Source == "NVIDIA")?.Message;
@@ -111,15 +111,18 @@ public sealed class MainViewModel : ViewModelBase
 
         foreach (var procSnapshot in snapshot.GpuProcesses)
         {
+            AiProcessIdentity? aiIdentity = null;
+            detection?.Processes.TryGetValue(procSnapshot.Pid, out aiIdentity);
+
             if (existingMap.TryGetValue(procSnapshot.Pid, out var vm))
             {
-                vm.UpdateFromSnapshot(procSnapshot);
+                vm.UpdateFromSnapshot(procSnapshot, aiIdentity);
                 updatedList.Add(vm);
             }
             else
             {
                 var newVm = new GpuProcessViewModel();
-                newVm.UpdateFromSnapshot(procSnapshot);
+                newVm.UpdateFromSnapshot(procSnapshot, aiIdentity);
                 updatedList.Add(newVm);
             }
         }

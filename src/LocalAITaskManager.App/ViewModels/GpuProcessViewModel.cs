@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using LocalAITaskManager.Core.Models;
 using LocalAITaskManager.Core.Services;
 
@@ -9,6 +10,8 @@ public sealed class GpuProcessViewModel : ViewModelBase
     private string _processName = string.Empty;
     private ulong? _localVramBytes;
     private string _vramText = "—";
+    private string _runtimeText = "—";
+    private string _modelText = "—";
     private string _localUsageText = "—";
     private string _nonLocalUsageText = "—";
     private string _totalCommittedText = "—";
@@ -18,6 +21,19 @@ public sealed class GpuProcessViewModel : ViewModelBase
     private string _cpuText = "—";
     private string _executablePath = "Unavailable";
     private string _commandLine = "Unavailable";
+
+    // AI Workload Inspector Details
+    private bool _isAiWorkload;
+    private string _aiRuntimeText = "—";
+    private string _aiRuntimeConfidenceText = "—";
+    private string _aiModelNameText = "—";
+    private string _aiModelConfidenceText = "—";
+    private string _aiQuantizationText = "—";
+    private string _aiParameterSizeText = "—";
+    private string _aiConfiguredContextText = "—";
+    private string _aiRuntimeReportedVramText = "—";
+
+    public ObservableCollection<string> AiEvidence { get; } = [];
 
     public int Pid
     {
@@ -31,15 +47,24 @@ public sealed class GpuProcessViewModel : ViewModelBase
         set => SetProperty(ref _processName, value);
     }
 
+    public string RuntimeText
+    {
+        get => _runtimeText;
+        set => SetProperty(ref _runtimeText, value);
+    }
+
+    public string ModelText
+    {
+        get => _modelText;
+        set => SetProperty(ref _modelText, value);
+    }
+
     public ulong? LocalVramBytes
     {
         get => _localVramBytes;
         set => SetProperty(ref _localVramBytes, value);
     }
 
-    /// <summary>
-    /// Primary process VRAM column text based on WDDM Local Usage.
-    /// </summary>
     public string VramText
     {
         get => _vramText;
@@ -100,7 +125,61 @@ public sealed class GpuProcessViewModel : ViewModelBase
         set => SetProperty(ref _commandLine, value);
     }
 
-    public void UpdateFromSnapshot(GpuProcessSnapshot snapshot)
+    public bool IsAiWorkload
+    {
+        get => _isAiWorkload;
+        set => SetProperty(ref _isAiWorkload, value);
+    }
+
+    public string AiRuntimeText
+    {
+        get => _aiRuntimeText;
+        set => SetProperty(ref _aiRuntimeText, value);
+    }
+
+    public string AiRuntimeConfidenceText
+    {
+        get => _aiRuntimeConfidenceText;
+        set => SetProperty(ref _aiRuntimeConfidenceText, value);
+    }
+
+    public string AiModelNameText
+    {
+        get => _aiModelNameText;
+        set => SetProperty(ref _aiModelNameText, value);
+    }
+
+    public string AiModelConfidenceText
+    {
+        get => _aiModelConfidenceText;
+        set => SetProperty(ref _aiModelConfidenceText, value);
+    }
+
+    public string AiQuantizationText
+    {
+        get => _aiQuantizationText;
+        set => SetProperty(ref _aiQuantizationText, value);
+    }
+
+    public string AiParameterSizeText
+    {
+        get => _aiParameterSizeText;
+        set => SetProperty(ref _aiParameterSizeText, value);
+    }
+
+    public string AiConfiguredContextText
+    {
+        get => _aiConfiguredContextText;
+        set => SetProperty(ref _aiConfiguredContextText, value);
+    }
+
+    public string AiRuntimeReportedVramText
+    {
+        get => _aiRuntimeReportedVramText;
+        set => SetProperty(ref _aiRuntimeReportedVramText, value);
+    }
+
+    public void UpdateFromSnapshot(GpuProcessSnapshot snapshot, AiProcessIdentity? aiIdentity = null)
     {
         Pid = snapshot.Pid;
         ProcessName = snapshot.ProcessName;
@@ -119,5 +198,60 @@ public sealed class GpuProcessViewModel : ViewModelBase
         CpuText = snapshot.CpuPercent.HasValue ? $"{snapshot.CpuPercent.Value:0}%" : "—";
         ExecutablePath = !string.IsNullOrWhiteSpace(snapshot.ExecutablePath) ? snapshot.ExecutablePath : "Unavailable";
         CommandLine = !string.IsNullOrWhiteSpace(snapshot.CommandLine) ? snapshot.CommandLine : "Unavailable";
+
+        // AI Workload attribution
+        if (aiIdentity is not null && aiIdentity.Runtime != AiRuntimeKind.Unknown)
+        {
+            IsAiWorkload = true;
+            RuntimeText = aiIdentity.Runtime switch
+            {
+                AiRuntimeKind.LlamaCpp => "llama.cpp",
+                AiRuntimeKind.Ollama => "Ollama",
+                AiRuntimeKind.LmStudio => "LM Studio",
+                _ => "—"
+            };
+            ModelText = aiIdentity.Model?.DisplayName ?? "—";
+
+            AiRuntimeText = RuntimeText;
+            AiRuntimeConfidenceText = aiIdentity.RuntimeConfidence.ToString();
+            AiModelNameText = aiIdentity.Model?.DisplayName ?? "—";
+            AiModelConfidenceText = aiIdentity.ModelConfidence != DetectionConfidence.None ? aiIdentity.ModelConfidence.ToString() : "—";
+            AiQuantizationText = aiIdentity.Model?.Quantization ?? "—";
+            AiParameterSizeText = aiIdentity.Model?.ParameterSize ?? "—";
+            AiConfiguredContextText = aiIdentity.Model?.ContextLength.HasValue == true
+                ? FormatContextLength(aiIdentity.Model.ContextLength.Value)
+                : "—";
+            AiRuntimeReportedVramText = ByteFormatter.Format(aiIdentity.Model?.RuntimeReportedVramBytes, "—");
+
+            AiEvidence.Clear();
+            foreach (var ev in aiIdentity.Evidence)
+            {
+                AiEvidence.Add(ev.Description);
+            }
+        }
+        else
+        {
+            IsAiWorkload = false;
+            RuntimeText = "—";
+            ModelText = "—";
+            AiRuntimeText = "—";
+            AiRuntimeConfidenceText = "—";
+            AiModelNameText = "—";
+            AiModelConfidenceText = "—";
+            AiQuantizationText = "—";
+            AiParameterSizeText = "—";
+            AiConfiguredContextText = "—";
+            AiRuntimeReportedVramText = "—";
+            AiEvidence.Clear();
+        }
+    }
+
+    private static string FormatContextLength(int contextLength)
+    {
+        if (contextLength >= 1024 && contextLength % 1024 == 0)
+        {
+            return $"{contextLength / 1024}K";
+        }
+        return contextLength.ToString("N0");
     }
 }

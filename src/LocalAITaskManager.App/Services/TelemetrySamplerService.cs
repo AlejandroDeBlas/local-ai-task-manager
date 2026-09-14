@@ -6,7 +6,8 @@ namespace LocalAITaskManager.App.Services;
 public sealed class TelemetrySamplerService : IAsyncDisposable
 {
     private readonly ISystemSnapshotProvider _snapshotProvider;
-    private readonly Action<SystemSnapshot> _onSnapshotReady;
+    private readonly IWorkloadDetectionCoordinator? _detectionCoordinator;
+    private readonly Action<SystemSnapshot, DetectionSnapshot?> _onSnapshotReady;
     private readonly TimeSpan _interval;
     private readonly CancellationTokenSource _cts = new();
     private Task? _samplingTask;
@@ -16,11 +17,13 @@ public sealed class TelemetrySamplerService : IAsyncDisposable
 
     public TelemetrySamplerService(
         ISystemSnapshotProvider snapshotProvider,
-        Action<SystemSnapshot> onSnapshotReady,
+        Action<SystemSnapshot, DetectionSnapshot?> onSnapshotReady,
+        IWorkloadDetectionCoordinator? detectionCoordinator = null,
         TimeSpan? interval = null)
     {
         _snapshotProvider = snapshotProvider ?? throw new ArgumentNullException(nameof(snapshotProvider));
         _onSnapshotReady = onSnapshotReady ?? throw new ArgumentNullException(nameof(onSnapshotReady));
+        _detectionCoordinator = detectionCoordinator;
         _interval = interval ?? TimeSpan.FromSeconds(1);
     }
 
@@ -42,16 +45,16 @@ public sealed class TelemetrySamplerService : IAsyncDisposable
         try
         {
             // Perform immediate first collection
-            await CollectOnceAsync(ct);
+            await CollectOnceAsync(ct).ConfigureAwait(false);
 
             while (!ct.IsCancellationRequested)
             {
-                if (!await timer.WaitForNextTickAsync(ct))
+                if (!await timer.WaitForNextTickAsync(ct).ConfigureAwait(false))
                 {
                     break;
                 }
 
-                await CollectOnceAsync(ct);
+                await CollectOnceAsync(ct).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)
@@ -68,10 +71,17 @@ public sealed class TelemetrySamplerService : IAsyncDisposable
     {
         try
         {
-            SystemSnapshot snapshot = await _snapshotProvider.GetSnapshotAsync(ct);
+            SystemSnapshot snapshot = await _snapshotProvider.GetSnapshotAsync(ct).ConfigureAwait(false);
+
+            DetectionSnapshot? detection = null;
+            if (_detectionCoordinator is not null)
+            {
+                detection = await _detectionCoordinator.DetectWorkloadsAsync(snapshot, ct).ConfigureAwait(false);
+            }
+
             if (!ct.IsCancellationRequested)
             {
-                _onSnapshotReady(snapshot);
+                _onSnapshotReady(snapshot, detection);
             }
         }
         catch (OperationCanceledException)
@@ -97,15 +107,11 @@ public sealed class TelemetrySamplerService : IAsyncDisposable
         {
             try
             {
-                await _samplingTask;
-            }
-            catch (OperationCanceledException)
-            {
-                // Expected
+                await _samplingTask.ConfigureAwait(false);
             }
             catch
             {
-                // Best-effort wait
+                // Ignore task cancellation on dispose
             }
         }
 
