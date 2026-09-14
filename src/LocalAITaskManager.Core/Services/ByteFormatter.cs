@@ -57,4 +57,27 @@ public static class ByteFormatter
 
         return string.Format(CultureInfo.InvariantCulture, "{0:0.0} / {1:0.0} GB", usedGb, totalGb);
     }
+
+    public static string FormatTokens(int? tokens)
+    {
+        if (!tokens.HasValue || tokens.Value <= 0)
+        {
+            return "—";
+        }
+
+        int val = tokens.Value;
+        if (val >= 1_000_000)
+        {
+            return string.Format(CultureInfo.InvariantCulture, "{0:0.#}M", val / 1_000_000.0);
+        }
+        if (val >= 1024 && val % 1024 == 0)
+        {
+            return $"{val / 1024}K";
+        }
+        if (val >= 1000)
+        {
+            return string.Format(CultureInfo.InvariantCulture, "{0:0.#}K", val / 1000.0);
+        }
+        return val.ToString(CultureInfo.InvariantCulture);
+    }
 }

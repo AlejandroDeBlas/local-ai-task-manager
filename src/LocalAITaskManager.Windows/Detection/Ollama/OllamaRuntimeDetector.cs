@@ -25,7 +25,7 @@ public sealed class OllamaRuntimeDetector : IRuntimeDetector
         CancellationToken cancellationToken)
     {
         var identified = new List<AiProcessIdentity>();
-        var runnerCandidates = new List<(GpuProcessSnapshot Process, List<DetectionEvidence> Evidence)>();
+        var runnerCandidates = new List<(GpuProcessSnapshot Process, List<DetectionEvidence> Evidence, int? RuntimeRootPid)>();
 
         HashSet<int> ollamaPids = FindOllamaProcessIds();
 
@@ -34,6 +34,7 @@ public sealed class OllamaRuntimeDetector : IRuntimeDetector
             cancellationToken.ThrowIfCancellationRequested();
 
             bool isOllama = false;
+            int? runtimeRootPid = null;
             var evidence = new List<DetectionEvidence>();
 
             string procName = process.ProcessName;
@@ -42,10 +43,13 @@ public sealed class OllamaRuntimeDetector : IRuntimeDetector
                 procName = procName[..^4];
             }
 
-            if (procName.Equals("ollama", StringComparison.OrdinalIgnoreCase) ||
-                procName.Equals("ollama app", StringComparison.OrdinalIgnoreCase))
+            bool isDirectController = procName.Equals("ollama", StringComparison.OrdinalIgnoreCase) ||
+                                      procName.Equals("ollama app", StringComparison.OrdinalIgnoreCase);
+
+            if (isDirectController)
             {
                 isOllama = true;
+                runtimeRootPid = process.Pid;
                 evidence.Add(new(DetectionEvidenceKind.ExecutableName, $"Process is {process.ProcessName}"));
             }
 
@@ -61,6 +65,7 @@ public sealed class OllamaRuntimeDetector : IRuntimeDetector
                 if (context.ProcessRelationships.IsDescendantOf(process.Pid, ollamaPid))
                 {
                     isOllama = true;
+                    runtimeRootPid = ollamaPid;
                     evidence.Add(new(DetectionEvidenceKind.ProcessAncestry, $"Process is a descendant of Ollama (PID {ollamaPid})"));
                     break;
                 }
@@ -68,12 +73,11 @@ public sealed class OllamaRuntimeDetector : IRuntimeDetector
 
             if (isOllama)
             {
-                bool isRunner = !procName.Equals("ollama", StringComparison.OrdinalIgnoreCase) &&
-                                !procName.Equals("ollama app", StringComparison.OrdinalIgnoreCase);
+                bool isRunner = !isDirectController;
 
                 if (isRunner)
                 {
-                    runnerCandidates.Add((process, evidence));
+                    runnerCandidates.Add((process, evidence, runtimeRootPid));
                 }
                 else
                 {
@@ -83,7 +87,8 @@ public sealed class OllamaRuntimeDetector : IRuntimeDetector
                         RuntimeConfidence: DetectionConfidence.Confirmed,
                         Model: null,
                         ModelConfidence: DetectionConfidence.None,
-                        Evidence: evidence
+                        Evidence: evidence,
+                        RuntimeRootPid: runtimeRootPid ?? process.Pid
                     ));
                 }
             }
@@ -127,7 +132,7 @@ public sealed class OllamaRuntimeDetector : IRuntimeDetector
 
         if (loadedModels.Count == 1 && runnerCandidates.Count == 1)
         {
-            var (runnerProcess, runnerEvidence) = runnerCandidates[0];
+            var (runnerProcess, runnerEvidence, runnerRootPid) = runnerCandidates[0];
             OllamaModelItem modelItem = loadedModels[0];
 
             runnerEvidence.Add(new(DetectionEvidenceKind.LocalApi, "Ollama /api/ps confirmed one loaded model"));
@@ -149,7 +154,8 @@ public sealed class OllamaRuntimeDetector : IRuntimeDetector
                 RuntimeConfidence: DetectionConfidence.Confirmed,
                 Model: modelIdentity,
                 ModelConfidence: DetectionConfidence.Confirmed,
-                Evidence: runnerEvidence
+                Evidence: runnerEvidence,
+                RuntimeRootPid: runnerRootPid
             ));
         }
         else
@@ -171,7 +177,7 @@ public sealed class OllamaRuntimeDetector : IRuntimeDetector
                 }
             }
 
-            foreach (var (runnerProcess, runnerEvidence) in runnerCandidates)
+            foreach (var (runnerProcess, runnerEvidence, runnerRootPid) in runnerCandidates)
             {
                 if (loadedModels.Count > 1)
                 {
@@ -184,7 +190,8 @@ public sealed class OllamaRuntimeDetector : IRuntimeDetector
                     RuntimeConfidence: DetectionConfidence.Confirmed,
                     Model: null,
                     ModelConfidence: DetectionConfidence.None,
-                    Evidence: runnerEvidence
+                    Evidence: runnerEvidence,
+                    RuntimeRootPid: runnerRootPid
                 ));
             }
         }

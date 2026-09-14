@@ -1,26 +1,15 @@
 using System.Diagnostics;
 using LocalAITaskManager.Core.Abstractions;
 using LocalAITaskManager.Core.Models;
-using LocalAITaskManager.Core.Services;
 
 namespace LocalAITaskManager.Windows.Detection.LmStudio;
 
 public sealed class LmStudioRuntimeDetector : IRuntimeDetector
 {
-    private readonly ILocalCommandRunner? _commandRunner;
-    private readonly TimeSpan _cacheDuration;
-    private readonly Func<string?> _cliPathResolver;
-
     public AiRuntimeKind Runtime => AiRuntimeKind.LmStudio;
 
-    public LmStudioRuntimeDetector(
-        ILocalCommandRunner? commandRunner = null,
-        TimeSpan? cacheDuration = null,
-        Func<string?>? cliPathResolver = null)
+    public LmStudioRuntimeDetector()
     {
-        _commandRunner = commandRunner;
-        _cacheDuration = cacheDuration ?? TimeSpan.FromSeconds(3);
-        _cliPathResolver = cliPathResolver ?? ResolveLmsCliPath;
     }
 
     public Task<RuntimeDetectionResult> DetectAsync(
@@ -35,6 +24,7 @@ public sealed class LmStudioRuntimeDetector : IRuntimeDetector
             cancellationToken.ThrowIfCancellationRequested();
 
             bool isLmStudio = false;
+            int? runtimeRootPid = null;
             var evidence = new List<DetectionEvidence>();
 
             string procName = process.ProcessName;
@@ -49,6 +39,7 @@ public sealed class LmStudioRuntimeDetector : IRuntimeDetector
             if (isDirectExecutable)
             {
                 isLmStudio = true;
+                runtimeRootPid = process.Pid;
                 evidence.Add(new(DetectionEvidenceKind.ExecutableName, $"Process is {process.ProcessName}"));
             }
 
@@ -64,6 +55,7 @@ public sealed class LmStudioRuntimeDetector : IRuntimeDetector
                 if (context.ProcessRelationships.IsDescendantOf(process.Pid, lmsPid))
                 {
                     isLmStudio = true;
+                    runtimeRootPid = lmsPid;
                     evidence.Add(new(DetectionEvidenceKind.ProcessAncestry, $"Process is a descendant of LM Studio (PID {lmsPid})"));
                     break;
                 }
@@ -79,7 +71,8 @@ public sealed class LmStudioRuntimeDetector : IRuntimeDetector
                     RuntimeConfidence: isDirectExecutable ? DetectionConfidence.Confirmed : DetectionConfidence.Medium,
                     Model: null,
                     ModelConfidence: DetectionConfidence.None,
-                    Evidence: evidence
+                    Evidence: evidence,
+                    RuntimeRootPid: runtimeRootPid
                 ));
             }
         }
@@ -108,24 +101,5 @@ public sealed class LmStudioRuntimeDetector : IRuntimeDetector
             // Best effort
         }
         return pids;
-    }
-
-    private static string? ResolveLmsCliPath()
-    {
-        string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        string cacheLms = Path.Combine(userProfile, ".cache", "lm-studio", "bin", "lms.exe");
-        if (File.Exists(cacheLms))
-        {
-            return cacheLms;
-        }
-
-        string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        string programsLms = Path.Combine(localAppData, "Programs", "LM Studio", "resources", "app", "bin", "lms.exe");
-        if (File.Exists(programsLms))
-        {
-            return programsLms;
-        }
-
-        return null;
     }
 }

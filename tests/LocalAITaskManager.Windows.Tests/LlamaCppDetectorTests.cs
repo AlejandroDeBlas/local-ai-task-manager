@@ -146,11 +146,12 @@ public class LlamaCppDetectorTests
     }
 
     [Fact]
-    public async Task DetectAsync_MalformedArguments_DoesNotCrash()
+    public async Task DetectAsync_MalformedArguments_DoesNotElevateConfidence()
     {
         var detector = new LlamaCppRuntimeDetector(_parser);
 
-        var proc = new GpuProcessSnapshot(
+        // Case 1: -m without value
+        var proc1 = new GpuProcessSnapshot(
             Pid: 25142,
             ProcessName: "llama-server.exe",
             LocalGpuMemoryBytes: null,
@@ -164,14 +165,74 @@ public class LlamaCppDetectorTests
             CommandLine: "llama-server.exe -m"
         );
 
-        var snapshot = new SystemSnapshot(DateTimeOffset.UtcNow, [], new SystemMemorySnapshot(null, null, null), [proc], []);
+        var snapshot1 = new SystemSnapshot(DateTimeOffset.UtcNow, [], new SystemMemorySnapshot(null, null, null), [proc1], []);
         var relationships = new ProcessRelationshipSnapshot(new Dictionary<int, int>());
-        var context = new WorkloadDetectionContext(snapshot, relationships);
+        var context1 = new WorkloadDetectionContext(snapshot1, relationships);
 
-        var result = await detector.DetectAsync(context, CancellationToken.None);
+        var result1 = await detector.DetectAsync(context1, CancellationToken.None);
+        Assert.Single(result1.IdentifiedProcesses);
+        Assert.Equal(DetectionConfidence.Medium, result1.IdentifiedProcesses[0].RuntimeConfidence);
+        Assert.Null(result1.IdentifiedProcesses[0].Model);
+        Assert.Equal(25142, result1.IdentifiedProcesses[0].RuntimeRootPid);
 
-        Assert.Single(result.IdentifiedProcesses);
-        Assert.Equal(DetectionConfidence.High, result.IdentifiedProcesses[0].RuntimeConfidence);
-        Assert.Null(result.IdentifiedProcesses[0].Model);
+        // Case 2: -c abc (invalid integer)
+        var proc2 = new GpuProcessSnapshot(
+            Pid: 25145,
+            ProcessName: "llama-server.exe",
+            LocalGpuMemoryBytes: null,
+            NonLocalGpuMemoryBytes: null,
+            TotalCommittedGpuMemoryBytes: null,
+            DedicatedGpuMemoryBytes: null,
+            SharedGpuMemoryBytes: null,
+            WorkingSetBytes: null,
+            CpuPercent: null,
+            ExecutablePath: null,
+            CommandLine: "llama-server.exe -c abc"
+        );
+        var snapshot2 = new SystemSnapshot(DateTimeOffset.UtcNow, [], new SystemMemorySnapshot(null, null, null), [proc2], []);
+        var context2 = new WorkloadDetectionContext(snapshot2, relationships);
+        var result2 = await detector.DetectAsync(context2, CancellationToken.None);
+        Assert.Single(result2.IdentifiedProcesses);
+        Assert.Equal(DetectionConfidence.Medium, result2.IdentifiedProcesses[0].RuntimeConfidence);
+
+        // Case 3: --model= (empty value)
+        var proc3 = new GpuProcessSnapshot(
+            Pid: 25146,
+            ProcessName: "llama-server.exe",
+            LocalGpuMemoryBytes: null,
+            NonLocalGpuMemoryBytes: null,
+            TotalCommittedGpuMemoryBytes: null,
+            DedicatedGpuMemoryBytes: null,
+            SharedGpuMemoryBytes: null,
+            WorkingSetBytes: null,
+            CpuPercent: null,
+            ExecutablePath: null,
+            CommandLine: "llama-server.exe --model="
+        );
+        var snapshot3 = new SystemSnapshot(DateTimeOffset.UtcNow, [], new SystemMemorySnapshot(null, null, null), [proc3], []);
+        var context3 = new WorkloadDetectionContext(snapshot3, relationships);
+        var result3 = await detector.DetectAsync(context3, CancellationToken.None);
+        Assert.Single(result3.IdentifiedProcesses);
+        Assert.Equal(DetectionConfidence.Medium, result3.IdentifiedProcesses[0].RuntimeConfidence);
+
+        // Case 4: --models-dir= (empty value)
+        var proc4 = new GpuProcessSnapshot(
+            Pid: 25147,
+            ProcessName: "llama-server.exe",
+            LocalGpuMemoryBytes: null,
+            NonLocalGpuMemoryBytes: null,
+            TotalCommittedGpuMemoryBytes: null,
+            DedicatedGpuMemoryBytes: null,
+            SharedGpuMemoryBytes: null,
+            WorkingSetBytes: null,
+            CpuPercent: null,
+            ExecutablePath: null,
+            CommandLine: "llama-server.exe --models-dir="
+        );
+        var snapshot4 = new SystemSnapshot(DateTimeOffset.UtcNow, [], new SystemMemorySnapshot(null, null, null), [proc4], []);
+        var context4 = new WorkloadDetectionContext(snapshot4, relationships);
+        var result4 = await detector.DetectAsync(context4, CancellationToken.None);
+        Assert.Single(result4.IdentifiedProcesses);
+        Assert.Equal(DetectionConfidence.Medium, result4.IdentifiedProcesses[0].RuntimeConfidence);
     }
 }

@@ -20,10 +20,10 @@ LocalAITaskManager.Core (Domain entities, abstractions, formatters, pure logic)
 ```
 
 1. **`LocalAITaskManager.Core`**:
-   - Zero Windows dependencies (can be referenced by cross-platform libraries/tests).
-   - Contains immutable domain snapshots (`SystemSnapshot`, `DetectionSnapshot`, `AiProcessIdentity`, `DetectedModelIdentity`).
-   - Abstractions: `IGpuTelemetryProvider`, `IGpuProcessMemoryProvider`, `ISystemMemoryProvider`, `IProcessInfoProvider`, `ISystemSnapshotProvider`, `IProcessRelationshipProvider`, `ICommandLineParser`, `ILocalCommandRunner`, `IRuntimeDetector`, `IWorkloadDetectionCoordinator`.
-   - Pure math and logic: `ProcessCpuCalculator`, `GpuProcessMemoryAggregator`, `ByteFormatter`, `GgufQuantizationInference`.
+   - Zero Windows dependencies (cross-platform compatible domain and tests).
+   - Contains immutable domain snapshots (`SystemSnapshot`, `DetectionSnapshot`, `AiProcessIdentity`, `DetectedModelIdentity`, `AiWorkloadSnapshot`, `AppSnapshot`).
+   - Abstractions: `IGpuTelemetryProvider`, `IGpuProcessMemoryProvider`, `ISystemMemoryProvider`, `IProcessInfoProvider`, `ISystemSnapshotProvider`, `IProcessRelationshipProvider`, `ICommandLineParser`, `IRuntimeDetector`, `IWorkloadDetectionCoordinator`, `IAiWorkloadComposer`.
+   - Pure math and logic: `AiWorkloadComposer`, `ProcessCpuCalculator`, `GpuProcessMemoryAggregator`, `ByteFormatter`, `GgufQuantizationInference`.
 
 2. **`LocalAITaskManager.Windows`**:
    - Interacts with operating system and hardware drivers directly.
@@ -38,37 +38,49 @@ LocalAITaskManager.Core (Domain entities, abstractions, formatters, pure logic)
    - `WorkloadDetectionCoordinator`: coordinates detectors and enforces strict precedence rules (`Ollama` / `LM Studio` > generic `llama.cpp` fallback).
 
 3. **`LocalAITaskManager.App`**:
-   - WPF application providing MVVM view models and views.
+   - WPF application providing MVVM view models (`MainViewModel`, `AiWorkloadViewModel`, `GpuProcessViewModel`, `GpuDeviceViewModel`).
+   - Keyed in-place collection reconciliation preserving selection and scroll state without UI flicker.
+   - Dual inspection hierarchy (Workload level with member process breakdown; standalone process level).
    - Background sampling loop running at ~1 Hz using `PeriodicTimer`.
-   - Threading isolation: collectors and detectors run asynchronously in the background, never blocking the UI thread.
+   - Threading isolation: collectors, detectors, and composer run asynchronously in the background, never blocking the UI thread.
    - Dispatcher synchronization publishes immutable snapshots to observable view models.
 
-## Telemetry & Detection Flow
+## Telemetry & Workload Composition Flow
 
 ```text
-                    ┌──────────────┐
-NVML ───────────────►              │
-PDH ────────────────► System       │
-Win32 ──────────────► Snapshot     │
-                    └──────┬───────┘
-                           │
-                           ▼
-               WorkloadDetectionCoordinator
-                 │         │          │
-                 ▼         ▼          ▼
-             llama.cpp   Ollama    LM Studio
-              detector   detector    detector
-                 │         │          │
-                 └─────────┼──────────┘
-                           ▼
-                    DetectionSnapshot
-                           │
-                           ▼
-                       MainViewModel
-                           │
-                           ▼
-                       WPF View
+NVML ──┐
+PDH  ──┼─► SystemSnapshot ──┐
+Win32 ─┘                    │
+                            ▼
+              WorkloadDetectionCoordinator ──► DetectionSnapshot ──┐
+                (llama.cpp, Ollama, LMS)                           │
+                                                                   ▼
+                                                           AiWorkloadComposer
+                                                                   │
+                                                                   ▼
+                                                              AppSnapshot
+                                                                   │
+                                                                   ▼
+                                                             MainViewModel
+                                                            (Reconciliation)
+                                                                   │
+                                                                   ▼
+                                                               WPF View
+                                                       (Workloads + Inspector)
 ```
+
+## AI Workload Composition Rules
+
+The `AiWorkloadComposer` transforms raw detected processes into first-class user-facing workloads according to deterministic domain rules:
+
+1. **Grouping Key:** Processes detected with AI runtime identities are grouped by `(Runtime, RuntimeRootPid ?? Pid)`.
+2. **Composition Semantics:**
+   - **Single Model (Case 1):** If the group contains exactly 1 model assignment, a single `Model` workload is generated containing both the controller process and runner process. The primary PID is set to the runner executing the model, and primary VRAM is the runner's WDDM Local Usage.
+   - **Multi-Model (Case 2):** If the group contains multiple loaded models / runner processes (e.g. concurrent Ollama models), each runner becomes a distinct `Model` workload. The shared controller/service is separated into a dedicated `RuntimeService` workload.
+   - **Runtime Only (Case 3):** If no models are detected (e.g. idle Ollama service or LM Studio), a `RuntimeOnly` workload is generated. The primary PID is selected by root PID with GPU memory > largest GPU consumer > lowest PID.
+3. **Unique PID Invariant:** Every process PID belongs to at most one workload (`ProcessPids` sets across all workloads are strictly disjoint).
+4. **Other GPU Processes:** All active GPU processes not attributed to an AI workload are automatically segregated into `OTHER GPU PROCESSES`.
+5. **Deterministic WorkloadId:** Workload IDs are purely deterministic strings (e.g. `ollama:model:qwen2.5:1.5b`, `llama.cpp:model:46588`, `lmstudio:runtime:1234`) enabling stable keyed reconciliation in the UI.
 
 ## Source-of-Truth Hierarchy
 

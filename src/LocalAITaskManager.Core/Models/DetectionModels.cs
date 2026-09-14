@@ -21,7 +21,8 @@ public sealed record AiProcessIdentity(
     DetectionConfidence RuntimeConfidence,
     DetectedModelIdentity? Model,
     DetectionConfidence ModelConfidence,
-    IReadOnlyList<DetectionEvidence> Evidence
+    IReadOnlyList<DetectionEvidence> Evidence,
+    int? RuntimeRootPid = null
 );
 
 public sealed record RuntimeModelObservation(

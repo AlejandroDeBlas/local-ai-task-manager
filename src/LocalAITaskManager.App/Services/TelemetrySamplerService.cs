@@ -7,7 +7,8 @@ public sealed class TelemetrySamplerService : IAsyncDisposable
 {
     private readonly ISystemSnapshotProvider _snapshotProvider;
     private readonly IWorkloadDetectionCoordinator? _detectionCoordinator;
-    private readonly Action<SystemSnapshot, DetectionSnapshot?> _onSnapshotReady;
+    private readonly IAiWorkloadComposer? _workloadComposer;
+    private readonly Action<AppSnapshot> _onSnapshotReady;
     private readonly TimeSpan _interval;
     private readonly CancellationTokenSource _cts = new();
     private Task? _samplingTask;
@@ -17,13 +18,15 @@ public sealed class TelemetrySamplerService : IAsyncDisposable
 
     public TelemetrySamplerService(
         ISystemSnapshotProvider snapshotProvider,
-        Action<SystemSnapshot, DetectionSnapshot?> onSnapshotReady,
+        Action<AppSnapshot> onSnapshotReady,
         IWorkloadDetectionCoordinator? detectionCoordinator = null,
+        IAiWorkloadComposer? workloadComposer = null,
         TimeSpan? interval = null)
     {
         _snapshotProvider = snapshotProvider ?? throw new ArgumentNullException(nameof(snapshotProvider));
         _onSnapshotReady = onSnapshotReady ?? throw new ArgumentNullException(nameof(onSnapshotReady));
         _detectionCoordinator = detectionCoordinator;
+        _workloadComposer = workloadComposer;
         _interval = interval ?? TimeSpan.FromSeconds(1);
     }
 
@@ -73,15 +76,25 @@ public sealed class TelemetrySamplerService : IAsyncDisposable
         {
             SystemSnapshot snapshot = await _snapshotProvider.GetSnapshotAsync(ct).ConfigureAwait(false);
 
-            DetectionSnapshot? detection = null;
+            DetectionSnapshot detection;
             if (_detectionCoordinator is not null)
             {
                 detection = await _detectionCoordinator.DetectWorkloadsAsync(snapshot, ct).ConfigureAwait(false);
             }
+            else
+            {
+                detection = new DetectionSnapshot(DateTimeOffset.UtcNow, new Dictionary<int, AiProcessIdentity>(), [], []);
+            }
+
+            IReadOnlyList<AiWorkloadSnapshot> workloads = _workloadComposer is not null
+                ? _workloadComposer.Compose(snapshot, detection)
+                : [];
+
+            var appSnapshot = new AppSnapshot(snapshot, detection, workloads);
 
             if (!ct.IsCancellationRequested)
             {
-                _onSnapshotReady(snapshot, detection);
+                _onSnapshotReady(appSnapshot);
             }
         }
         catch (OperationCanceledException)

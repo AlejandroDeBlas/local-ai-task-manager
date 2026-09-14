@@ -5,28 +5,34 @@ Task Manager for Local AI.
 Local AI Task Manager is an experimental, zero-configuration Windows desktop utility designed to monitor local AI workloads and GPU memory consumption without relying on external servers, CLI wrappers, or `nvidia-smi`.
 
 > [!NOTE]
-> This repository represents **Phase 2: Runtime and Model Identification**.
+> This repository represents **Phase 3: AI Workload Composition + Product UI**.
 
-<!-- Screenshot placeholder -->
+<!-- ASCII UI Mockup -->
 ```text
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│ Local AI Task Manager                                                                  │
-│                                                                                        │
-│ NVIDIA GeForce RTX 4070 Ti SUPER                                                       │
-│ [████████████████████████░░░]  14.2 / 16.0 GB                                          │
-│                                                                                        │
-│ GPU 92%     TEMP 66°C     POWER 224W                                                   │
-│ RAM 18.1 / 31.8 GB                                                                     │
-│                                                                                        │
-│ GPU PROCESSES                                                                          │
-│ ────────────────────────────────────────────────────────────────────────────────────── │
-│ Process             Runtime       Model                         PID      VRAM   RAM    │
-│ llama-server.exe    Ollama        qwen2.5:1.5b                 46588    1.3 GB 1.0 GB  │
-│ llama-server.exe    llama.cpp     Ornith-1.5-35B-heretic-Q4_K  25140    5.0 GB 5.7 GB  │
-│ LM Studio child     LM Studio     mistral-small-24b            32110   13.2 GB 1.4 GB  │
-│ dwm.exe             —             —                             1276   389 MB  150 MB  │
-│ firefox.exe         —             —                            12000   180 MB  900 MB  │
-└────────────────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Local AI Task Manager                                                                           │
+│ Task Manager for Local AI                                                                       │
+│                                                                                                 │
+│ NVIDIA GeForce RTX 3080 Ti • Driver 552.22  │ VRAM [██████████████░░░] 12.8 / 16.0 GB           │
+│ UTIL 42%   TEMP 58°C   POWER 185W   RAM 18.2 / 31.8 GB                                          │
+├────────────────────────────────────────────────────────┬────────────────────────────────────────┤
+│ AI WORKLOADS (2 active)                                │ INSPECTOR                              │
+│ ┌────────────────────────────────────────────────────┐ │ Qwen2.5 14B Q4_K_M                     │
+│ │ Qwen2.5 14B Q4_K_M                        10.8 GB  │ │ Runtime: Ollama (Confidence: Confirmed)│
+│ │ [Ollama] [Q4_K_M] [Context 32K]                    │ │                                        │
+│ │ 2 processes • PID 46588      RAM: 1.2 GB  CPU: 0.4%│ │ MODEL CONFIGURATION                    │
+│ └────────────────────────────────────────────────────┘ │ Quantization: Q4_K_M                   │
+│ ┌────────────────────────────────────────────────────┐ │ Context: 32,768 tokens                 │
+│ │ LM Studio                                   1.4 GB │ │                                        │
+│ │ [LM Studio • Experimental] [Model detection unavail]│ WORKLOAD RESOURCES                     │
+│ │ 1 process • PID 32110        RAM: 620 MB  CPU: 0.1%│ │ Primary VRAM: 10.8 GB (WDDM Local)     │
+│ └────────────────────────────────────────────────────┘ │ Working Set: 1.2 GB                    │
+│                                                        │                                        │
+│ OTHER GPU PROCESSES (3 processes)                      │ Workload Processes:                    │
+│ Process              PID       VRAM        RAM    CPU  │ • ollama_llama_server.exe (PID 46588)  │
+│ dwm.exe             1276     389 MB     150 MB   1.2%  │ • ollama.exe (PID 1240)                │
+│ chrome.exe         14200     220 MB     840 MB   0.5%  │                                        │
+└────────────────────────────────────────────────────────┴────────────────────────────────────────┘
 ```
 
 ## Feature Status
@@ -35,6 +41,12 @@ Local AI Task Manager is an experimental, zero-configuration Windows desktop uti
 
 **Hardware:**
 * NVIDIA / Windows (NVML + WDDM PDH)
+
+**Workload Composition & Product UI:**
+* AI Workloads as primary top-level domain entities
+* Separation of AI workloads from unassigned `OTHER GPU PROCESSES`
+* Dual Inspector pane: Workload metadata + inspected process command-line / WDDM breakdown
+* Smooth, flicker-free keyed collection reconciliation preserving user selections
 
 **Runtime Detection:**
 * standalone `llama.cpp` / `llama-server`
@@ -58,7 +70,7 @@ Local AI Task Manager is an experimental, zero-configuration Windows desktop uti
 
 ## Principle: UNKNOWN > WRONG
 
-Local AI Task Manager strictly adheres to the principle of never guessing. If an AI workload cannot be unambiguously attributed to a specific model or runtime with verifiable evidence, it remains classified as `—` (unknown) rather than displaying speculative information.
+Local AI Task Manager strictly adheres to the principle of never guessing. If an AI workload cannot be unambiguously attributed to a specific model or runtime with verifiable evidence, it remains classified as `Unknown` rather than displaying speculative information.
 
 ---
 
@@ -93,7 +105,7 @@ Local AI Task Manager strictly adheres to the principle of never guessing. If an
 
 ## WDDM Memory Semantics & Primary "VRAM" Metric
 
-The process-table `VRAM` column uses WDDM **Local Usage** (`\GPU Process Memory(*)\Local Usage`).
+The workload cards and other GPU process rows use WDDM **Local Usage** (`\GPU Process Memory(*)\Local Usage`) as their primary VRAM metric. For multi-process AI workloads, the workload card displays the primary model process's local memory usage (`PrimaryLocalGpuMemoryBytes`) rather than summing member allocations (since WDDM process-level allocations are not strictly additive and can double-count shared mappings).
 
 Per-process Local Usage values should not be expected to sum exactly to NVML's global Used VRAM because the two APIs expose different accounting scopes and WDDM may involve shared allocations, driver allocations, and timing differences between sampling intervals.
 

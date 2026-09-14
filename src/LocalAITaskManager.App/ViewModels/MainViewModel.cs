@@ -8,12 +8,20 @@ public sealed class MainViewModel : ViewModelBase
 {
     private string _systemRamText = "—";
     private double _systemRamPercent;
-    private GpuProcessViewModel? _selectedProcess;
     private string? _gpuWarningMessage;
     private string? _processWarningMessage;
 
+    private AiWorkloadViewModel? _selectedWorkload;
+    private string? _selectedWorkloadId;
+
+    private GpuProcessViewModel? _selectedOtherProcess;
+    private int? _selectedOtherProcessPid;
+
+    private GpuProcessViewModel? _inspectedMemberProcess;
+
     public ObservableCollection<GpuDeviceViewModel> Gpus { get; } = [];
-    public ObservableCollection<GpuProcessViewModel> Processes { get; } = [];
+    public ObservableCollection<AiWorkloadViewModel> Workloads { get; } = [];
+    public ObservableCollection<GpuProcessViewModel> OtherGpuProcesses { get; } = [];
 
     public string SystemRamText
     {
@@ -27,19 +35,75 @@ public sealed class MainViewModel : ViewModelBase
         set => SetProperty(ref _systemRamPercent, value);
     }
 
-    public GpuProcessViewModel? SelectedProcess
+    public bool HasWorkloads => Workloads.Count > 0;
+    public bool HasOtherGpuProcesses => OtherGpuProcesses.Count > 0;
+
+    public AiWorkloadViewModel? SelectedWorkload
     {
-        get => _selectedProcess;
+        get => _selectedWorkload;
         set
         {
-            if (SetProperty(ref _selectedProcess, value))
+            if (SetProperty(ref _selectedWorkload, value))
             {
-                OnPropertyChanged(nameof(HasSelectedProcess));
+                _selectedWorkloadId = value?.WorkloadId;
+                if (value != null)
+                {
+                    // Deselect other process
+                    SelectedOtherProcess = null;
+                    // Default inspected member to primary process
+                    InspectedMemberProcess = value.MemberProcesses.FirstOrDefault(m => m.Pid == value.PrimaryPid)
+                        ?? value.MemberProcesses.FirstOrDefault();
+                }
+                OnPropertyChanged(nameof(HasSelectedWorkload));
+                OnPropertyChanged(nameof(HasAnySelection));
+                OnPropertyChanged(nameof(ActiveProcessDetails));
+                OnPropertyChanged(nameof(HasActiveProcessDetails));
             }
         }
     }
 
-    public bool HasSelectedProcess => SelectedProcess is not null;
+    public bool HasSelectedWorkload => SelectedWorkload is not null;
+
+    public GpuProcessViewModel? SelectedOtherProcess
+    {
+        get => _selectedOtherProcess;
+        set
+        {
+            if (SetProperty(ref _selectedOtherProcess, value))
+            {
+                _selectedOtherProcessPid = value?.Pid;
+                if (value != null)
+                {
+                    SelectedWorkload = null;
+                    InspectedMemberProcess = null;
+                }
+                OnPropertyChanged(nameof(HasSelectedOtherProcess));
+                OnPropertyChanged(nameof(HasAnySelection));
+                OnPropertyChanged(nameof(ActiveProcessDetails));
+                OnPropertyChanged(nameof(HasActiveProcessDetails));
+            }
+        }
+    }
+
+    public bool HasSelectedOtherProcess => SelectedOtherProcess is not null;
+
+    public GpuProcessViewModel? InspectedMemberProcess
+    {
+        get => _inspectedMemberProcess;
+        set
+        {
+            if (SetProperty(ref _inspectedMemberProcess, value))
+            {
+                OnPropertyChanged(nameof(ActiveProcessDetails));
+                OnPropertyChanged(nameof(HasActiveProcessDetails));
+            }
+        }
+    }
+
+    public GpuProcessViewModel? ActiveProcessDetails => SelectedOtherProcess ?? InspectedMemberProcess;
+    public bool HasActiveProcessDetails => ActiveProcessDetails is not null;
+
+    public bool HasAnySelection => HasSelectedWorkload || HasSelectedOtherProcess;
 
     public string? GpuWarningMessage
     {
@@ -69,8 +133,10 @@ public sealed class MainViewModel : ViewModelBase
 
     public bool HasProcessWarning => !string.IsNullOrEmpty(ProcessWarningMessage);
 
-    public void UpdateSnapshot(SystemSnapshot snapshot, DetectionSnapshot? detection = null)
+    public void UpdateSnapshot(AppSnapshot appSnapshot)
     {
+        var snapshot = appSnapshot.Telemetry;
+
         // 1. Warnings
         string? gpuWarn = snapshot.Warnings.FirstOrDefault(w => w.Source == "NVIDIA")?.Message;
         GpuWarningMessage = gpuWarn;
@@ -103,39 +169,145 @@ public sealed class MainViewModel : ViewModelBase
             ? Math.Clamp((double)snapshot.Memory.UsedPhysicalBytes.Value / snapshot.Memory.TotalPhysicalBytes.Value * 100.0, 0.0, 100.0)
             : 0.0;
 
-        // 4. Processes
-        int? selectedPid = SelectedProcess?.Pid;
+        // 4. Process lookup
+        var processLookup = snapshot.GpuProcesses
+            .GroupBy(p => p.Pid)
+            .ToDictionary(g => g.Key, g => g.First());
 
-        var existingMap = Processes.ToDictionary(p => p.Pid);
-        var updatedList = new List<GpuProcessViewModel>(snapshot.GpuProcesses.Count);
+        // 5. Reconcile Workloads
+        var existingWorkloadMap = Workloads.ToDictionary(w => w.WorkloadId);
+        var currentWorkloadIds = appSnapshot.Workloads.Select(w => w.WorkloadId).ToHashSet();
 
-        foreach (var procSnapshot in snapshot.GpuProcesses)
+        for (int i = Workloads.Count - 1; i >= 0; i--)
         {
-            AiProcessIdentity? aiIdentity = null;
-            detection?.Processes.TryGetValue(procSnapshot.Pid, out aiIdentity);
-
-            if (existingMap.TryGetValue(procSnapshot.Pid, out var vm))
+            if (!currentWorkloadIds.Contains(Workloads[i].WorkloadId))
             {
-                vm.UpdateFromSnapshot(procSnapshot, aiIdentity);
-                updatedList.Add(vm);
+                Workloads.RemoveAt(i);
+            }
+        }
+
+        for (int targetIndex = 0; targetIndex < appSnapshot.Workloads.Count; targetIndex++)
+        {
+            var snap = appSnapshot.Workloads[targetIndex];
+            if (existingWorkloadMap.TryGetValue(snap.WorkloadId, out var vm))
+            {
+                vm.Update(snap, processLookup);
+                int currentIndex = Workloads.IndexOf(vm);
+                if (currentIndex != targetIndex && currentIndex >= 0)
+                {
+                    Workloads.Move(currentIndex, targetIndex);
+                }
+            }
+            else
+            {
+                var newVm = new AiWorkloadViewModel(snap, processLookup);
+                Workloads.Insert(targetIndex, newVm);
+                existingWorkloadMap[snap.WorkloadId] = newVm;
+            }
+        }
+
+        OnPropertyChanged(nameof(HasWorkloads));
+
+        // Restore or clear SelectedWorkload
+        if (_selectedWorkloadId != null)
+        {
+            var matched = Workloads.FirstOrDefault(w => w.WorkloadId == _selectedWorkloadId);
+            if (matched != null)
+            {
+                _selectedWorkload = matched;
+                OnPropertyChanged(nameof(SelectedWorkload));
+                OnPropertyChanged(nameof(HasSelectedWorkload));
+                OnPropertyChanged(nameof(HasAnySelection));
+
+                if (InspectedMemberProcess != null)
+                {
+                    InspectedMemberProcess = matched.MemberProcesses.FirstOrDefault(m => m.Pid == InspectedMemberProcess.Pid)
+                        ?? matched.MemberProcesses.FirstOrDefault();
+                }
+                else
+                {
+                    InspectedMemberProcess = matched.MemberProcesses.FirstOrDefault(m => m.Pid == matched.PrimaryPid)
+                        ?? matched.MemberProcesses.FirstOrDefault();
+                }
+            }
+            else
+            {
+                _selectedWorkload = null;
+                _selectedWorkloadId = null;
+                InspectedMemberProcess = null;
+                OnPropertyChanged(nameof(SelectedWorkload));
+                OnPropertyChanged(nameof(HasSelectedWorkload));
+                OnPropertyChanged(nameof(HasAnySelection));
+                OnPropertyChanged(nameof(ActiveProcessDetails));
+                OnPropertyChanged(nameof(HasActiveProcessDetails));
+            }
+        }
+
+        // 6. Reconcile Other GPU Processes
+        var allWorkloadPids = appSnapshot.Workloads.SelectMany(w => w.ProcessPids).ToHashSet();
+        var otherProcessesList = snapshot.GpuProcesses
+            .Where(p => !allWorkloadPids.Contains(p.Pid))
+            .OrderByDescending(p => p.LocalGpuMemoryBytes ?? 0)
+            .ThenBy(p => p.Pid)
+            .ToList();
+
+        var existingOtherMap = OtherGpuProcesses.ToDictionary(p => p.Pid);
+        var currentOtherPids = otherProcessesList.Select(p => p.Pid).ToHashSet();
+
+        for (int i = OtherGpuProcesses.Count - 1; i >= 0; i--)
+        {
+            if (!currentOtherPids.Contains(OtherGpuProcesses[i].Pid))
+            {
+                OtherGpuProcesses.RemoveAt(i);
+            }
+        }
+
+        for (int targetIndex = 0; targetIndex < otherProcessesList.Count; targetIndex++)
+        {
+            var procSnap = otherProcessesList[targetIndex];
+            if (existingOtherMap.TryGetValue(procSnap.Pid, out var vm))
+            {
+                vm.UpdateFromSnapshot(procSnap, null);
+                int currentIndex = OtherGpuProcesses.IndexOf(vm);
+                if (currentIndex != targetIndex && currentIndex >= 0)
+                {
+                    OtherGpuProcesses.Move(currentIndex, targetIndex);
+                }
             }
             else
             {
                 var newVm = new GpuProcessViewModel();
-                newVm.UpdateFromSnapshot(procSnapshot, aiIdentity);
-                updatedList.Add(newVm);
+                newVm.UpdateFromSnapshot(procSnap, null);
+                OtherGpuProcesses.Insert(targetIndex, newVm);
+                existingOtherMap[procSnap.Pid] = newVm;
             }
         }
 
-        Processes.Clear();
-        foreach (var item in updatedList)
-        {
-            Processes.Add(item);
-        }
+        OnPropertyChanged(nameof(HasOtherGpuProcesses));
 
-        if (selectedPid.HasValue)
+        // Restore or clear SelectedOtherProcess
+        if (_selectedOtherProcessPid != null)
         {
-            SelectedProcess = Processes.FirstOrDefault(p => p.Pid == selectedPid.Value);
+            var matchedProc = OtherGpuProcesses.FirstOrDefault(p => p.Pid == _selectedOtherProcessPid.Value);
+            if (matchedProc != null)
+            {
+                _selectedOtherProcess = matchedProc;
+                OnPropertyChanged(nameof(SelectedOtherProcess));
+                OnPropertyChanged(nameof(HasSelectedOtherProcess));
+                OnPropertyChanged(nameof(HasAnySelection));
+                OnPropertyChanged(nameof(ActiveProcessDetails));
+                OnPropertyChanged(nameof(HasActiveProcessDetails));
+            }
+            else
+            {
+                _selectedOtherProcess = null;
+                _selectedOtherProcessPid = null;
+                OnPropertyChanged(nameof(SelectedOtherProcess));
+                OnPropertyChanged(nameof(HasSelectedOtherProcess));
+                OnPropertyChanged(nameof(HasAnySelection));
+                OnPropertyChanged(nameof(ActiveProcessDetails));
+                OnPropertyChanged(nameof(HasActiveProcessDetails));
+            }
         }
     }
 }

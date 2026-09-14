@@ -66,70 +66,82 @@ public sealed class LlamaCppRuntimeDetector : IRuntimeDetector
                     if (arg.Equals("-m", StringComparison.OrdinalIgnoreCase) ||
                         arg.Equals("--model", StringComparison.OrdinalIgnoreCase))
                     {
-                        hasStructuralFlags = true;
-                        if (i + 1 < args.Count && !args[i + 1].StartsWith('-'))
+                        if (i + 1 < args.Count && !args[i + 1].StartsWith('-') && !string.IsNullOrWhiteSpace(args[i + 1]))
                         {
                             modelPath = args[i + 1];
+                            hasStructuralFlags = true;
                             evidence.Add(new(DetectionEvidenceKind.CommandLine, $"{arg} argument found"));
                             i++;
                         }
                     }
                     else if (arg.StartsWith("--model=", StringComparison.OrdinalIgnoreCase))
                     {
-                        hasStructuralFlags = true;
-                        modelPath = arg["--model=".Length..].Trim('\"');
-                        evidence.Add(new(DetectionEvidenceKind.CommandLine, "--model= argument found"));
+                        string val = arg["--model=".Length..].Trim('\"');
+                        if (!string.IsNullOrWhiteSpace(val))
+                        {
+                            modelPath = val;
+                            hasStructuralFlags = true;
+                            evidence.Add(new(DetectionEvidenceKind.CommandLine, "--model= argument found"));
+                        }
                     }
                     else if (arg.StartsWith("-m=", StringComparison.OrdinalIgnoreCase))
                     {
-                        hasStructuralFlags = true;
-                        modelPath = arg["-m=".Length..].Trim('\"');
-                        evidence.Add(new(DetectionEvidenceKind.CommandLine, "-m= argument found"));
+                        string val = arg["-m=".Length..].Trim('\"');
+                        if (!string.IsNullOrWhiteSpace(val))
+                        {
+                            modelPath = val;
+                            hasStructuralFlags = true;
+                            evidence.Add(new(DetectionEvidenceKind.CommandLine, "-m= argument found"));
+                        }
                     }
                     else if (arg.Equals("--models-dir", StringComparison.OrdinalIgnoreCase))
                     {
-                        hasStructuralFlags = true;
-                        usesModelsDir = true;
-                        evidence.Add(new(DetectionEvidenceKind.CommandLine, "--models-dir argument found"));
-                        if (i + 1 < args.Count && !args[i + 1].StartsWith('-'))
+                        if (i + 1 < args.Count && !args[i + 1].StartsWith('-') && !string.IsNullOrWhiteSpace(args[i + 1]))
                         {
+                            usesModelsDir = true;
+                            hasStructuralFlags = true;
+                            evidence.Add(new(DetectionEvidenceKind.CommandLine, "--models-dir argument found"));
                             i++;
                         }
                     }
                     else if (arg.StartsWith("--models-dir=", StringComparison.OrdinalIgnoreCase))
                     {
-                        hasStructuralFlags = true;
-                        usesModelsDir = true;
-                        evidence.Add(new(DetectionEvidenceKind.CommandLine, "--models-dir= argument found"));
+                        string val = arg["--models-dir=".Length..].Trim('\"');
+                        if (!string.IsNullOrWhiteSpace(val))
+                        {
+                            usesModelsDir = true;
+                            hasStructuralFlags = true;
+                            evidence.Add(new(DetectionEvidenceKind.CommandLine, "--models-dir= argument found"));
+                        }
                     }
                     else if (arg.Equals("-c", StringComparison.OrdinalIgnoreCase) ||
                              arg.Equals("--ctx-size", StringComparison.OrdinalIgnoreCase))
                     {
-                        hasStructuralFlags = true;
-                        if (i + 1 < args.Count && int.TryParse(args[i + 1], out int parsedCtx))
+                        if (i + 1 < args.Count && int.TryParse(args[i + 1], out int parsedCtx) && parsedCtx > 0)
                         {
                             contextLength = parsedCtx;
+                            hasStructuralFlags = true;
                             evidence.Add(new(DetectionEvidenceKind.CommandLine, $"{arg} configured context found"));
                             i++;
                         }
                     }
                     else if (arg.StartsWith("--ctx-size=", StringComparison.OrdinalIgnoreCase))
                     {
-                        hasStructuralFlags = true;
                         string val = arg["--ctx-size=".Length..].Trim('\"');
-                        if (int.TryParse(val, out int parsedCtx))
+                        if (int.TryParse(val, out int parsedCtx) && parsedCtx > 0)
                         {
                             contextLength = parsedCtx;
+                            hasStructuralFlags = true;
                             evidence.Add(new(DetectionEvidenceKind.CommandLine, "--ctx-size= configured context found"));
                         }
                     }
                     else if (arg.StartsWith("-c=", StringComparison.OrdinalIgnoreCase))
                     {
-                        hasStructuralFlags = true;
                         string val = arg["-c=".Length..].Trim('\"');
-                        if (int.TryParse(val, out int parsedCtx))
+                        if (int.TryParse(val, out int parsedCtx) && parsedCtx > 0)
                         {
                             contextLength = parsedCtx;
+                            hasStructuralFlags = true;
                             evidence.Add(new(DetectionEvidenceKind.CommandLine, "-c= configured context found"));
                         }
                     }
@@ -173,7 +185,8 @@ public sealed class LlamaCppRuntimeDetector : IRuntimeDetector
                 RuntimeConfidence: runtimeConfidence,
                 Model: model,
                 ModelConfidence: modelConfidence,
-                Evidence: evidence
+                Evidence: evidence,
+                RuntimeRootPid: process.Pid
             ));
         }
 

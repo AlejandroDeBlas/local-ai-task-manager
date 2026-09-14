@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Windows;
 using LocalAITaskManager.App.Services;
 using LocalAITaskManager.App.ViewModels;
+using LocalAITaskManager.Core.Services;
 using LocalAITaskManager.Windows.Detection;
 using LocalAITaskManager.Windows.Detection.LlamaCpp;
 using LocalAITaskManager.Windows.Detection.LmStudio;
@@ -45,23 +46,25 @@ public partial class MainWindow : Window
         );
 
         var cmdParser = new WindowsCommandLineParser();
-        var commandRunner = new ProcessLocalCommandRunner();
         var relationshipProvider = new Win32ProcessRelationshipProvider();
 
         _ollamaClient = new OllamaApiClient();
         var llamaDetector = new LlamaCppRuntimeDetector(cmdParser);
         var ollamaDetector = new OllamaRuntimeDetector(_ollamaClient);
-        var lmsDetector = new LmStudioRuntimeDetector(commandRunner);
+        var lmsDetector = new LmStudioRuntimeDetector();
 
         var coordinator = new WorkloadDetectionCoordinator(
             relationshipProvider,
             [ollamaDetector, lmsDetector, llamaDetector]
         );
 
+        var composer = new AiWorkloadComposer();
+
         _samplerService = new TelemetrySamplerService(
             _snapshotProvider,
-            (snapshot, detection) => Dispatcher.InvokeAsync(() => _viewModel.UpdateSnapshot(snapshot, detection)),
-            coordinator
+            appSnapshot => Dispatcher.InvokeAsync(() => _viewModel.UpdateSnapshot(appSnapshot)),
+            coordinator,
+            composer
         );
 
         Loaded += OnLoaded;

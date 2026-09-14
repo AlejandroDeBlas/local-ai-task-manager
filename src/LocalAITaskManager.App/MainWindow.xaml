@@ -4,8 +4,8 @@
         xmlns:converters="clr-namespace:LocalAITaskManager.App.Converters"
         xmlns:vm="clr-namespace:LocalAITaskManager.App.ViewModels"
         Title="Local AI Task Manager"
-        Width="920" Height="740"
-        MinWidth="760" MinHeight="550"
+        Width="1180" Height="780"
+        MinWidth="900" MinHeight="600"
         WindowStartupLocation="CenterScreen"
         Background="{StaticResource BgDarkBrush}"
         Foreground="{StaticResource TextPrimaryBrush}">
@@ -15,322 +15,565 @@
     <converters:BooleanToVisibilityConverter x:Key="InvBoolToVis" Invert="True" />
   </Window.Resources>
 
-  <Grid Margin="20">
+  <Grid Margin="18,16,18,16">
     <Grid.RowDefinitions>
       <!-- Title & Header -->
       <RowDefinition Height="Auto" />
-      <!-- Warnings / Notices -->
+      <!-- Hardware Overview Strip -->
       <RowDefinition Height="Auto" />
-      <!-- Hardware Overview Cards -->
-      <RowDefinition Height="Auto" />
-      <!-- Processes Table Header & DataGrid -->
+      <!-- Main Split View: Workloads & Processes / Inspector -->
       <RowDefinition Height="*" />
-      <!-- Selected Process Details -->
-      <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
 
-    <!-- Header -->
-    <StackPanel Grid.Row="0" Margin="0,0,0,16">
-      <TextBlock Text="Local AI Task Manager" FontSize="20" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" />
-      <TextBlock Text="Windows &amp; NVIDIA Real-Time Hardware Telemetry" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,2,0,0" />
+    <!-- Header & Warnings -->
+    <StackPanel Grid.Row="0" Margin="0,0,0,12">
+      <DockPanel LastChildFill="False">
+        <StackPanel DockPanel.Dock="Left">
+          <TextBlock Text="Local AI Task Manager" FontSize="20" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" />
+          <TextBlock Text="Task Manager for Local AI" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,2,0,0" />
+        </StackPanel>
+      </DockPanel>
+
+      <!-- Warnings -->
+      <StackPanel Margin="0,8,0,0">
+        <!-- GPU Warning Banner -->
+        <Border Background="#2D2415" BorderBrush="{StaticResource WarningBrush}" BorderThickness="1" CornerRadius="6" Padding="12,8" Margin="0,0,0,6"
+                Visibility="{Binding HasGpuWarning, Converter={StaticResource BoolToVis}}">
+          <TextBlock Text="{Binding GpuWarningMessage}" Foreground="{StaticResource WarningBrush}" FontSize="12" TextWrapping="Wrap" />
+        </Border>
+
+        <!-- Process/PDH Warning Banner -->
+        <Border Background="#2D2415" BorderBrush="{StaticResource WarningBrush}" BorderThickness="1" CornerRadius="6" Padding="12,8" Margin="0,0,0,6"
+                Visibility="{Binding HasProcessWarning, Converter={StaticResource BoolToVis}}">
+          <TextBlock Text="{Binding ProcessWarningMessage}" Foreground="{StaticResource WarningBrush}" FontSize="12" TextWrapping="Wrap" />
+        </Border>
+      </StackPanel>
     </StackPanel>
 
-    <!-- Warnings / Errors -->
-    <StackPanel Grid.Row="1" Margin="0,0,0,12">
-      <!-- GPU Warning Banner -->
-      <Border Background="#2D2415" BorderBrush="{StaticResource WarningBrush}" BorderThickness="1" CornerRadius="6" Padding="12,8" Margin="0,0,0,8"
-              Visibility="{Binding HasGpuWarning, Converter={StaticResource BoolToVis}}">
-        <TextBlock Text="{Binding GpuWarningMessage}" Foreground="{StaticResource WarningBrush}" FontSize="13" TextWrapping="Wrap" />
-      </Border>
+    <!-- Compact Hardware Overview Strip -->
+    <Border Grid.Row="1" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="14,10" Margin="0,0,0,14">
+      <ItemsControl ItemsSource="{Binding Gpus}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate DataType="{x:Type vm:GpuDeviceViewModel}">
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <!-- GPU Name & Driver -->
+                <ColumnDefinition Width="260" />
+                <!-- VRAM Ratio & Bar -->
+                <ColumnDefinition Width="*" />
+                <!-- Quick Metrics Strip -->
+                <ColumnDefinition Width="380" />
+              </Grid.ColumnDefinitions>
 
-      <!-- PDH Warning Banner -->
-      <Border Background="#2D2415" BorderBrush="{StaticResource WarningBrush}" BorderThickness="1" CornerRadius="6" Padding="12,8" Margin="0,0,0,8"
-              Visibility="{Binding HasProcessWarning, Converter={StaticResource BoolToVis}}">
-        <TextBlock Text="{Binding ProcessWarningMessage}" Foreground="{StaticResource WarningBrush}" FontSize="13" TextWrapping="Wrap" />
-      </Border>
-    </StackPanel>
+              <!-- GPU Name & Driver -->
+              <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0">
+                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="14" Foreground="{StaticResource TextPrimaryBrush}" TextTrimming="CharacterEllipsis" />
+                <TextBlock Text="{Binding DriverVersion, StringFormat='Driver {0}'}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,2,0,0" />
+              </StackPanel>
 
-    <!-- Hardware Cards -->
-    <Grid Grid.Row="2" Margin="0,0,0,16">
+              <!-- VRAM Bar & Details -->
+              <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,24,0">
+                <DockPanel LastChildFill="False" Margin="0,0,0,4">
+                  <TextBlock Text="VRAM (DEVICE TOTAL)" FontSize="10" FontWeight="SemiBold" Foreground="{StaticResource TextSecondaryBrush}" DockPanel.Dock="Left" />
+                  <TextBlock Text="{Binding VramText}" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" DockPanel.Dock="Right" />
+                </DockPanel>
+                <ProgressBar Style="{StaticResource FlatProgressBarStyle}" Value="{Binding VramPercent}" Maximum="100" Height="6" />
+              </StackPanel>
+
+              <!-- Quick Metrics Strip -->
+              <Grid Grid.Column="2" VerticalAlignment="Center">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="1.2*" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0">
+                  <TextBlock Text="GPU UTIL" FontSize="10" FontWeight="SemiBold" Foreground="{StaticResource TextSecondaryBrush}" />
+                  <TextBlock Text="{Binding GpuUtilizationText}" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,2,0,0" />
+                </StackPanel>
+
+                <StackPanel Grid.Column="1">
+                  <TextBlock Text="TEMP" FontSize="10" FontWeight="SemiBold" Foreground="{StaticResource TextSecondaryBrush}" />
+                  <TextBlock Text="{Binding TemperatureText}" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,2,0,0" />
+                </StackPanel>
+
+                <StackPanel Grid.Column="2">
+                  <TextBlock Text="POWER" FontSize="10" FontWeight="SemiBold" Foreground="{StaticResource TextSecondaryBrush}" />
+                  <TextBlock Text="{Binding PowerText}" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,2,0,0" />
+                </StackPanel>
+
+                <StackPanel Grid.Column="3">
+                  <TextBlock Text="SYSTEM RAM" FontSize="10" FontWeight="SemiBold" Foreground="{StaticResource TextSecondaryBrush}" />
+                  <TextBlock Text="{Binding DataContext.SystemRamText, RelativeSource={RelativeSource AncestorType=Window}}" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,2,0,0" />
+                </StackPanel>
+              </Grid>
+            </Grid>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </Border>
+
+    <!-- Main Split View: Left (Workloads & Other Processes) | Right (Inspector) -->
+    <Grid Grid.Row="2">
       <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="*" />
-        <ColumnDefinition Width="16" />
-        <ColumnDefinition Width="280" />
+        <ColumnDefinition Width="*" MinWidth="520" />
+        <ColumnDefinition Width="12" />
+        <ColumnDefinition Width="380" MinWidth="320" MaxWidth="500" />
       </Grid.ColumnDefinitions>
 
-      <!-- GPU Telemetry Card -->
-      <Border Grid.Column="0" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="16">
-        <ItemsControl ItemsSource="{Binding Gpus}">
-          <ItemsControl.ItemTemplate>
-            <DataTemplate DataType="{x:Type vm:GpuDeviceViewModel}">
-              <StackPanel Margin="0,0,0,12">
-                <!-- GPU Name & Driver -->
-                <DockPanel LastChildFill="False" Margin="0,0,0,8">
-                  <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="15" Foreground="{StaticResource TextPrimaryBrush}" DockPanel.Dock="Left" />
-                  <TextBlock Text="{Binding DriverVersion, StringFormat='Driver {0}'}" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" DockPanel.Dock="Right" />
-                </DockPanel>
+      <!-- Left Pane: AI Workloads & Other GPU Processes -->
+      <Grid Grid.Column="0">
+        <Grid.RowDefinitions>
+          <!-- AI Workloads -->
+          <RowDefinition Height="1.2*" MinHeight="180" />
+          <!-- Splitter -->
+          <RowDefinition Height="10" />
+          <!-- Other GPU Processes -->
+          <RowDefinition Height="*" MinHeight="140" />
+        </Grid.RowDefinitions>
 
-                <!-- VRAM Bar & Ratio -->
-                <DockPanel LastChildFill="False" Margin="0,0,0,4">
-                  <TextBlock Text="VRAM" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextSecondaryBrush}" DockPanel.Dock="Left" />
-                  <TextBlock Text="{Binding VramText}" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" DockPanel.Dock="Right" />
-                </DockPanel>
-                <ProgressBar Style="{StaticResource FlatProgressBarStyle}" Value="{Binding VramPercent}" Maximum="100" Margin="0,0,0,12" />
+        <!-- Section 1: AI WORKLOADS -->
+        <Border Grid.Row="0" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="14,12">
+          <DockPanel>
+            <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10">
+              <TextBlock Text="AI WORKLOADS" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" DockPanel.Dock="Left" />
+              <TextBlock Text="{Binding Workloads.Count, StringFormat='{}{0} active'}" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" DockPanel.Dock="Right" />
+            </DockPanel>
 
-                <!-- GPU Metrics Row -->
-                <Grid>
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="*" />
-                  </Grid.ColumnDefinitions>
+            <Grid>
+              <!-- Workloads List -->
+              <ListBox ItemsSource="{Binding Workloads}"
+                       SelectedItem="{Binding SelectedWorkload, Mode=TwoWay}"
+                       Style="{StaticResource WorkloadListBoxStyle}"
+                       Visibility="{Binding HasWorkloads, Converter={StaticResource BoolToVis}}">
+                <ListBox.ItemTemplate>
+                  <DataTemplate DataType="{x:Type vm:AiWorkloadViewModel}">
+                    <Grid>
+                      <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                      </Grid.RowDefinitions>
 
-                  <StackPanel Grid.Column="0">
-                    <TextBlock Text="UTILIZATION" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" FontWeight="Medium" />
-                    <TextBlock Text="{Binding GpuUtilizationText}" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,2,0,0" />
-                  </StackPanel>
+                      <!-- Card Header: Title & VRAM -->
+                      <DockPanel Grid.Row="0" LastChildFill="False">
+                        <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" FontSize="15" Foreground="{StaticResource TextPrimaryBrush}" TextTrimming="CharacterEllipsis" DockPanel.Dock="Left" MaxWidth="380" />
+                        <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" VerticalAlignment="Center">
+                          <TextBlock Text="{Binding PrimaryVramText}" FontWeight="Bold" FontSize="15" Foreground="{StaticResource AccentBrush}" />
+                          <TextBlock Text=" VRAM" FontSize="11" FontWeight="Medium" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Bottom" Margin="2,0,0,1" />
+                        </StackPanel>
+                      </DockPanel>
 
-                  <StackPanel Grid.Column="1">
-                    <TextBlock Text="TEMPERATURE" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" FontWeight="Medium" />
-                    <TextBlock Text="{Binding TemperatureText}" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,2,0,0" />
-                  </StackPanel>
+                      <!-- Badges / Metadata Row -->
+                      <WrapPanel Grid.Row="1" Margin="0,7,0,9">
+                        <!-- Runtime Badge -->
+                        <Border CornerRadius="4" Padding="7,2" Margin="0,0,6,0" Background="#1E293B" BorderBrush="#334155" BorderThickness="1">
+                          <TextBlock Text="{Binding RuntimeBadgeText}" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}" />
+                        </Border>
 
-                  <StackPanel Grid.Column="2">
-                    <TextBlock Text="POWER DRAW" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" FontWeight="Medium" />
-                    <TextBlock Text="{Binding PowerText}" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,2,0,0" />
-                  </StackPanel>
-                </Grid>
-              </StackPanel>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
-      </Border>
+                        <!-- Quantization Badge -->
+                        <Border CornerRadius="4" Padding="7,2" Margin="0,0,6,0" Background="#262626" BorderBrush="#383838" BorderThickness="1"
+                                Visibility="{Binding HasQuantization, Converter={StaticResource BoolToVis}}">
+                          <TextBlock Text="{Binding QuantizationBadgeText}" FontSize="11" Foreground="{StaticResource TextPrimaryBrush}" />
+                        </Border>
 
-      <!-- System RAM Card -->
-      <Border Grid.Column="2" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="16">
-        <StackPanel>
-          <TextBlock Text="SYSTEM RAM" FontWeight="SemiBold" FontSize="14" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,8" />
-          <DockPanel LastChildFill="False" Margin="0,0,0,4">
-            <TextBlock Text="Physical Memory" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" DockPanel.Dock="Left" />
-            <TextBlock Text="{Binding SystemRamText}" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" DockPanel.Dock="Right" />
+                        <!-- Context Badge -->
+                        <Border CornerRadius="4" Padding="7,2" Margin="0,0,6,0" Background="#142B28" BorderBrush="#1C473E" BorderThickness="1"
+                                Visibility="{Binding HasContext, Converter={StaticResource BoolToVis}}">
+                          <TextBlock Text="{Binding ContextBadgeText}" FontSize="11" Foreground="#34D399" />
+                        </Border>
+
+                        <!-- Parameter Size Badge -->
+                        <Border CornerRadius="4" Padding="7,2" Margin="0,0,6,0" Background="#262626" BorderBrush="#383838" BorderThickness="1"
+                                Visibility="{Binding HasParameterSize, Converter={StaticResource BoolToVis}}">
+                          <TextBlock Text="{Binding ParameterSizeText}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" />
+                        </Border>
+
+                        <!-- Subtitle (e.g. Model detection unavailable) -->
+                        <Border CornerRadius="4" Padding="7,2" Margin="0,0,6,0" Background="#2A1B18" BorderBrush="#4A2820" BorderThickness="1"
+                                Visibility="{Binding HasSubtitle, Converter={StaticResource BoolToVis}}">
+                          <TextBlock Text="{Binding SubtitleText}" FontSize="11" Foreground="#F87171" />
+                        </Border>
+                      </WrapPanel>
+
+                      <!-- Card Footer: Process Count, RAM, CPU -->
+                      <DockPanel Grid.Row="2" LastChildFill="False">
+                        <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
+                          <TextBlock Text="{Binding ProcessCountText}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" />
+                          <TextBlock Text=" • " FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" />
+                          <TextBlock Text="{Binding PrimaryPid, StringFormat='PID {0}'}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" />
+                        </StackPanel>
+
+                        <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+                          <TextBlock Text="RAM: " FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" />
+                          <TextBlock Text="{Binding PrimaryRamText}" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" />
+                          <TextBlock Text="   CPU: " FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" />
+                          <TextBlock Text="{Binding PrimaryCpuText}" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" />
+                        </StackPanel>
+                      </DockPanel>
+                    </Grid>
+                  </DataTemplate>
+                </ListBox.ItemTemplate>
+              </ListBox>
+
+              <!-- Empty State when no workloads detected -->
+              <Border Background="#161616" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="6" Padding="24"
+                      Visibility="{Binding HasWorkloads, Converter={StaticResource InvBoolToVis}}">
+                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                  <TextBlock Text="No local AI workloads detected" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource TextSecondaryBrush}" HorizontalAlignment="Center" />
+                  <TextBlock Text="Looking for active Ollama, llama-server / llama.cpp, or LM Studio processes." FontSize="11" Foreground="#64748B" HorizontalAlignment="Center" Margin="0,4,0,0" />
+                </StackPanel>
+              </Border>
+            </Grid>
           </DockPanel>
-          <ProgressBar Style="{StaticResource FlatProgressBarStyle}" Value="{Binding SystemRamPercent}" Maximum="100" Margin="0,0,0,16" />
+        </Border>
 
-          <TextBlock Text="Process VRAM Attribution" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,2" />
-          <TextBlock Text="Queried via Windows KMD PDH counters aggregated by PID." FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap" />
-        </StackPanel>
+        <!-- Horizontal Splitter between Workloads and Other Processes -->
+        <GridSplitter Grid.Row="1" Height="4" HorizontalAlignment="Stretch" VerticalAlignment="Center" Background="Transparent" Cursor="SizeNS" />
+
+        <!-- Section 2: OTHER GPU PROCESSES -->
+        <Border Grid.Row="2" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="14,10">
+          <DockPanel>
+            <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+              <TextBlock Text="OTHER GPU PROCESSES" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" DockPanel.Dock="Left" />
+              <TextBlock Text="{Binding OtherGpuProcesses.Count, StringFormat='{}{0} processes'}" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" DockPanel.Dock="Right" />
+            </DockPanel>
+
+            <DataGrid ItemsSource="{Binding OtherGpuProcesses}" SelectedItem="{Binding SelectedOtherProcess, Mode=TwoWay}">
+              <DataGrid.Columns>
+                <DataGridTextColumn Header="Process" Binding="{Binding ProcessName}" Width="*" />
+                <DataGridTextColumn Header="PID" Binding="{Binding Pid}" Width="75">
+                  <DataGridTextColumn.ElementStyle>
+                    <Style TargetType="TextBlock">
+                      <Setter Property="HorizontalAlignment" Value="Right" />
+                      <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
+                    </Style>
+                  </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+                <DataGridTextColumn Header="VRAM" Binding="{Binding VramText}" Width="95">
+                  <DataGridTextColumn.HeaderStyle>
+                    <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
+                      <Setter Property="ToolTip" Value="Local GPU memory reported by Windows WDDM." />
+                    </Style>
+                  </DataGridTextColumn.HeaderStyle>
+                  <DataGridTextColumn.ElementStyle>
+                    <Style TargetType="TextBlock">
+                      <Setter Property="HorizontalAlignment" Value="Right" />
+                      <Setter Property="FontWeight" Value="SemiBold" />
+                      <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+                    </Style>
+                  </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+                <DataGridTextColumn Header="RAM" Binding="{Binding RamText}" Width="95">
+                  <DataGridTextColumn.ElementStyle>
+                    <Style TargetType="TextBlock">
+                      <Setter Property="HorizontalAlignment" Value="Right" />
+                      <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
+                    </Style>
+                  </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+                <DataGridTextColumn Header="CPU" Binding="{Binding CpuText}" Width="75">
+                  <DataGridTextColumn.ElementStyle>
+                    <Style TargetType="TextBlock">
+                      <Setter Property="HorizontalAlignment" Value="Right" />
+                      <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
+                    </Style>
+                  </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+              </DataGrid.Columns>
+            </DataGrid>
+          </DockPanel>
+        </Border>
+      </Grid>
+
+      <!-- Vertical Splitter between Main List and Inspector -->
+      <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Center" VerticalAlignment="Stretch" Background="Transparent" Cursor="SizeWE" />
+
+      <!-- Right Pane: THE INSPECTOR -->
+      <Border Grid.Column="2" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="14">
+        <DockPanel>
+          <!-- Inspector Title -->
+          <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10">
+            <TextBlock Text="INSPECTOR" FontSize="11" FontWeight="Bold" Foreground="{StaticResource TextSecondaryBrush}" DockPanel.Dock="Left" />
+          </DockPanel>
+
+          <!-- Inspector Content -->
+          <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <Grid>
+              <!-- State 1: AI Workload Selected -->
+              <StackPanel Visibility="{Binding HasSelectedWorkload, Converter={StaticResource BoolToVis}}">
+                <!-- Workload Kind Tag & Name -->
+                <DockPanel LastChildFill="False" Margin="0,0,0,4">
+                  <Border CornerRadius="3" Padding="5,1" Background="#1E293B" BorderBrush="#334155" BorderThickness="1" DockPanel.Dock="Left">
+                    <TextBlock Text="{Binding SelectedWorkload.Kind}" FontSize="10" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}" />
+                  </Border>
+                </DockPanel>
+                <TextBlock Text="{Binding SelectedWorkload.DisplayName}" FontSize="17" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" TextWrapping="Wrap" Margin="0,2,0,4" />
+
+                <!-- Runtime & Confidence -->
+                <TextBlock Margin="0,0,0,10">
+                  <Run Text="Runtime: " Foreground="{StaticResource TextSecondaryBrush}" FontSize="11" />
+                  <Run Text="{Binding SelectedWorkload.RuntimeBadgeText, Mode=OneWay}" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" FontSize="11" />
+                  <Run Text="  (Confidence: " Foreground="{StaticResource TextSecondaryBrush}" FontSize="11" />
+                  <Run Text="{Binding SelectedWorkload.RuntimeConfidenceText, Mode=OneWay}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="11" />
+                  <Run Text=")" Foreground="{StaticResource TextSecondaryBrush}" FontSize="11" />
+                </TextBlock>
+
+                <!-- Model Metadata Card (Visible for Model kind) -->
+                <Border Background="#161616" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,0,0,10"
+                        Visibility="{Binding SelectedWorkload.IsModelKind, Converter={StaticResource BoolToVis}}">
+                  <StackPanel>
+                    <TextBlock Text="MODEL CONFIGURATION" FontSize="10" FontWeight="SemiBold" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,6" />
+                    <Grid Margin="0,0,0,4">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                      </Grid.ColumnDefinitions>
+
+                      <StackPanel Grid.Column="0">
+                        <TextBlock Text="Quantization" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" />
+                        <TextBlock Text="{Binding SelectedWorkload.QuantizationBadgeText, FallbackValue='—'}" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,1,0,0" />
+                      </StackPanel>
+
+                      <StackPanel Grid.Column="1">
+                        <TextBlock Text="Parameters" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" />
+                        <TextBlock Text="{Binding SelectedWorkload.ParameterSizeText, FallbackValue='—'}" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,1,0,0" />
+                      </StackPanel>
+                    </Grid>
+
+                    <Grid>
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                      </Grid.ColumnDefinitions>
+
+                      <StackPanel Grid.Column="0">
+                        <TextBlock Text="Context Configured" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" />
+                        <TextBlock Text="{Binding SelectedWorkload.ContextBadgeText, FallbackValue='—'}" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,1,0,0" />
+                      </StackPanel>
+
+                      <StackPanel Grid.Column="1">
+                        <TextBlock Text="Model Confidence" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" />
+                        <TextBlock Text="{Binding SelectedWorkload.ModelConfidenceText, FallbackValue='—'}" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,1,0,0" />
+                      </StackPanel>
+                    </Grid>
+                  </StackPanel>
+                </Border>
+
+                <!-- Workload Resource Card -->
+                <Border Background="#161616" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,0,0,10">
+                  <StackPanel>
+                    <TextBlock Text="WORKLOAD RESOURCES" FontSize="10" FontWeight="SemiBold" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,6" />
+
+                    <DockPanel LastChildFill="False" Margin="0,0,0,2">
+                      <TextBlock Text="Primary VRAM:" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" DockPanel.Dock="Left" />
+                      <TextBlock Text="{Binding SelectedWorkload.PrimaryVramText}" FontSize="12" FontWeight="Bold" Foreground="{StaticResource AccentBrush}" DockPanel.Dock="Right" />
+                    </DockPanel>
+                    <TextBlock Text="Windows WDDM Local Memory (Primary PID)" FontSize="9" Foreground="#64748B" Margin="0,0,0,6" />
+
+                    <DockPanel LastChildFill="False" Margin="0,0,0,4"
+                               Visibility="{Binding SelectedWorkload.HasRuntimeReportedVram, Converter={StaticResource BoolToVis}}">
+                      <TextBlock Text="Runtime Reported VRAM:" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" DockPanel.Dock="Left" />
+                      <TextBlock Text="{Binding SelectedWorkload.RuntimeReportedVramText}" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" DockPanel.Dock="Right" />
+                    </DockPanel>
+
+                    <DockPanel LastChildFill="False" Margin="0,0,0,4">
+                      <TextBlock Text="Working Set (RAM):" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" DockPanel.Dock="Left" />
+                      <TextBlock Text="{Binding SelectedWorkload.PrimaryRamText}" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" DockPanel.Dock="Right" />
+                    </DockPanel>
+
+                    <DockPanel LastChildFill="False">
+                      <TextBlock Text="Primary CPU Usage:" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" DockPanel.Dock="Left" />
+                      <TextBlock Text="{Binding SelectedWorkload.PrimaryCpuText}" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" DockPanel.Dock="Right" />
+                    </DockPanel>
+                  </StackPanel>
+                </Border>
+
+                <!-- Workload Processes List -->
+                <TextBlock Text="Workload Processes" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4" />
+                <ListBox ItemsSource="{Binding SelectedWorkload.MemberProcesses}"
+                         SelectedItem="{Binding InspectedMemberProcess, Mode=TwoWay}"
+                         Style="{StaticResource MemberProcessListBoxStyle}"
+                         Margin="0,0,0,8">
+                  <ListBox.ItemTemplate>
+                    <DataTemplate DataType="{x:Type vm:GpuProcessViewModel}">
+                      <DockPanel LastChildFill="False">
+                        <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
+                          <TextBlock Text="{Binding ProcessName}" FontWeight="SemiBold" FontSize="11" Foreground="{StaticResource TextPrimaryBrush}" />
+                          <TextBlock Text="{Binding Pid, StringFormat=' (PID {0})'}" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" />
+                        </StackPanel>
+                        <TextBlock Text="{Binding VramText}" FontWeight="SemiBold" FontSize="11" Foreground="{StaticResource TextPrimaryBrush}" DockPanel.Dock="Right" />
+                      </DockPanel>
+                    </DataTemplate>
+                  </ListBox.ItemTemplate>
+                </ListBox>
+
+                <!-- Detection Evidence -->
+                <TextBlock Text="Detection Evidence:" FontSize="10" FontWeight="SemiBold" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,2,0,4" />
+                <ItemsControl ItemsSource="{Binding SelectedWorkload.Evidence}" Margin="0,0,0,10">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <TextBlock Text="{Binding StringFormat='• {0}'}" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="4,1,0,1" />
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <!-- Technical Process Details for the selected member process -->
+                <Border Background="#161616" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,0,0,6"
+                        Visibility="{Binding HasActiveProcessDetails, Converter={StaticResource BoolToVis}}">
+                  <StackPanel>
+                    <DockPanel LastChildFill="False" Margin="0,0,0,6">
+                      <TextBlock Text="{Binding ActiveProcessDetails.ProcessName, StringFormat='Process Details: {0}'}" FontWeight="SemiBold" FontSize="11" Foreground="{StaticResource TextPrimaryBrush}" DockPanel.Dock="Left" />
+                      <TextBlock Text="{Binding ActiveProcessDetails.Pid, StringFormat='PID {0}'}" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" DockPanel.Dock="Right" />
+                    </DockPanel>
+
+                    <TextBlock Text="Executable:" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" />
+                    <TextBox Text="{Binding ActiveProcessDetails.ExecutablePath, Mode=OneWay}" IsReadOnly="True" Background="Transparent" Foreground="{StaticResource TextPrimaryBrush}" BorderThickness="0" FontSize="10" Padding="0" Cursor="Arrow" SelectionBrush="{StaticResource SelectionBrush}" Margin="0,0,0,6" />
+
+                    <TextBlock Text="Command Line:" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" />
+                    <TextBox Text="{Binding ActiveProcessDetails.CommandLine, Mode=OneWay}" IsReadOnly="True" Background="Transparent" Foreground="{StaticResource TextPrimaryBrush}" BorderThickness="0" FontSize="10" TextWrapping="Wrap" MaxHeight="70" VerticalScrollBarVisibility="Auto" Padding="0" Cursor="Arrow" SelectionBrush="{StaticResource SelectionBrush}" Margin="0,0,0,8" />
+
+                    <!-- WDDM Memory Breakdown -->
+                    <TextBlock Text="GPU MEMORY — WINDOWS WDDM" FontSize="9" FontWeight="SemiBold" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4" />
+                    <Grid>
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                      </Grid.ColumnDefinitions>
+                      <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                      </Grid.RowDefinitions>
+
+                      <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,0,4">
+                        <TextBlock Text="Local Usage" FontSize="9" Foreground="{StaticResource TextSecondaryBrush}" />
+                        <TextBlock Text="{Binding ActiveProcessDetails.LocalUsageText}" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" />
+                      </StackPanel>
+
+                      <StackPanel Grid.Row="0" Grid.Column="1" Margin="0,0,0,4">
+                        <TextBlock Text="Non-Local Usage" FontSize="9" Foreground="{StaticResource TextSecondaryBrush}" />
+                        <TextBlock Text="{Binding ActiveProcessDetails.NonLocalUsageText}" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" />
+                      </StackPanel>
+
+                      <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,0,0,4">
+                        <TextBlock Text="Dedicated Usage" FontSize="9" Foreground="{StaticResource TextSecondaryBrush}" />
+                        <TextBlock Text="{Binding ActiveProcessDetails.DedicatedUsageText}" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" />
+                      </StackPanel>
+
+                      <StackPanel Grid.Row="1" Grid.Column="1" Margin="0,0,0,4">
+                        <TextBlock Text="Shared Usage" FontSize="9" Foreground="{StaticResource TextSecondaryBrush}" />
+                        <TextBlock Text="{Binding ActiveProcessDetails.SharedUsageText}" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" />
+                      </StackPanel>
+
+                      <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2">
+                        <TextBlock Text="Total Committed" FontSize="9" Foreground="{StaticResource TextSecondaryBrush}" />
+                        <TextBlock Text="{Binding ActiveProcessDetails.TotalCommittedText}" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" />
+                      </StackPanel>
+                    </Grid>
+                  </StackPanel>
+                </Border>
+              </StackPanel>
+
+              <!-- State 2: Other GPU Process Selected -->
+              <StackPanel Visibility="{Binding HasSelectedOtherProcess, Converter={StaticResource BoolToVis}}">
+                <DockPanel LastChildFill="False" Margin="0,0,0,4">
+                  <Border CornerRadius="3" Padding="5,1" Background="#262626" BorderBrush="#383838" BorderThickness="1" DockPanel.Dock="Left">
+                    <TextBlock Text="GPU PROCESS" FontSize="10" FontWeight="SemiBold" Foreground="{StaticResource TextSecondaryBrush}" />
+                  </Border>
+                  <TextBlock Text="{Binding ActiveProcessDetails.Pid, StringFormat='PID {0}'}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" DockPanel.Dock="Right" />
+                </DockPanel>
+
+                <TextBlock Text="{Binding ActiveProcessDetails.ProcessName}" FontSize="17" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" TextWrapping="Wrap" Margin="0,2,0,10" />
+
+                <!-- Process Resources -->
+                <Border Background="#161616" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,0,0,10">
+                  <StackPanel>
+                    <TextBlock Text="RESOURCES" FontSize="10" FontWeight="SemiBold" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,6" />
+
+                    <DockPanel LastChildFill="False" Margin="0,0,0,4">
+                      <TextBlock Text="VRAM (Local Usage):" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" DockPanel.Dock="Left" />
+                      <TextBlock Text="{Binding ActiveProcessDetails.VramText}" FontSize="12" FontWeight="Bold" Foreground="{StaticResource AccentBrush}" DockPanel.Dock="Right" />
+                    </DockPanel>
+
+                    <DockPanel LastChildFill="False" Margin="0,0,0,4">
+                      <TextBlock Text="System RAM:" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" DockPanel.Dock="Left" />
+                      <TextBlock Text="{Binding ActiveProcessDetails.RamText}" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" DockPanel.Dock="Right" />
+                    </DockPanel>
+
+                    <DockPanel LastChildFill="False">
+                      <TextBlock Text="CPU Usage:" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" DockPanel.Dock="Left" />
+                      <TextBlock Text="{Binding ActiveProcessDetails.CpuText}" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" DockPanel.Dock="Right" />
+                    </DockPanel>
+                  </StackPanel>
+                </Border>
+
+                <!-- Technical Details: Executable & Command Line -->
+                <TextBlock Text="Executable:" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,2" />
+                <TextBox Text="{Binding ActiveProcessDetails.ExecutablePath, Mode=OneWay}" IsReadOnly="True" Background="Transparent" Foreground="{StaticResource TextPrimaryBrush}" BorderThickness="0" FontSize="10" Padding="0" Cursor="Arrow" SelectionBrush="{StaticResource SelectionBrush}" Margin="0,0,0,8" />
+
+                <TextBlock Text="Command Line:" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,2" />
+                <TextBox Text="{Binding ActiveProcessDetails.CommandLine, Mode=OneWay}" IsReadOnly="True" Background="Transparent" Foreground="{StaticResource TextPrimaryBrush}" BorderThickness="0" FontSize="10" TextWrapping="Wrap" MaxHeight="80" VerticalScrollBarVisibility="Auto" Padding="0" Cursor="Arrow" SelectionBrush="{StaticResource SelectionBrush}" Margin="0,0,0,12" />
+
+                <!-- WDDM Memory Breakdown -->
+                <Border Background="#161616" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="6" Padding="10,8">
+                  <StackPanel>
+                    <TextBlock Text="GPU MEMORY — WINDOWS WDDM" FontSize="10" FontWeight="SemiBold" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,6" />
+                    <Grid>
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                      </Grid.ColumnDefinitions>
+                      <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                      </Grid.RowDefinitions>
+
+                      <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,0,6">
+                        <TextBlock Text="Local Usage" FontSize="9" Foreground="{StaticResource TextSecondaryBrush}" />
+                        <TextBlock Text="{Binding ActiveProcessDetails.LocalUsageText}" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" />
+                      </StackPanel>
+
+                      <StackPanel Grid.Row="0" Grid.Column="1" Margin="0,0,0,6">
+                        <TextBlock Text="Non-Local Usage" FontSize="9" Foreground="{StaticResource TextSecondaryBrush}" />
+                        <TextBlock Text="{Binding ActiveProcessDetails.NonLocalUsageText}" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" />
+                      </StackPanel>
+
+                      <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,0,0,6">
+                        <TextBlock Text="Dedicated Usage" FontSize="9" Foreground="{StaticResource TextSecondaryBrush}" />
+                        <TextBlock Text="{Binding ActiveProcessDetails.DedicatedUsageText}" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" />
+                      </StackPanel>
+
+                      <StackPanel Grid.Row="1" Grid.Column="1" Margin="0,0,0,6">
+                        <TextBlock Text="Shared Usage" FontSize="9" Foreground="{StaticResource TextSecondaryBrush}" />
+                        <TextBlock Text="{Binding ActiveProcessDetails.SharedUsageText}" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" />
+                      </StackPanel>
+
+                      <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2">
+                        <TextBlock Text="Total Committed" FontSize="9" Foreground="{StaticResource TextSecondaryBrush}" />
+                        <TextBlock Text="{Binding ActiveProcessDetails.TotalCommittedText}" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" />
+                      </StackPanel>
+                    </Grid>
+                  </StackPanel>
+                </Border>
+              </StackPanel>
+
+              <!-- State 3: Nothing Selected -->
+              <Border Visibility="{Binding HasAnySelection, Converter={StaticResource InvBoolToVis}}"
+                      VerticalAlignment="Center" HorizontalAlignment="Center" Margin="0,40,0,0">
+                <StackPanel HorizontalAlignment="Center">
+                  <TextBlock Text="Nothing Selected" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextSecondaryBrush}" HorizontalAlignment="Center" />
+                  <TextBlock Text="Select an AI workload or GPU process to inspect technical details, command line, and WDDM memory breakdown."
+                             FontSize="11" Foreground="#64748B" TextAlignment="Center" TextWrapping="Wrap" Margin="16,6,16,0" />
+                </StackPanel>
+              </Border>
+            </Grid>
+          </ScrollViewer>
+        </DockPanel>
       </Border>
     </Grid>
-
-    <!-- GPU Processes Table -->
-    <Border Grid.Row="3" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="8">
-      <DockPanel>
-        <DockPanel DockPanel.Dock="Top" Margin="8,4,8,8">
-          <TextBlock Text="GPU PROCESSES" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" DockPanel.Dock="Left" />
-          <TextBlock Text="{Binding Processes.Count, StringFormat='{}{0} active'}" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" DockPanel.Dock="Right" />
-        </DockPanel>
-
-        <DataGrid ItemsSource="{Binding Processes}" SelectedItem="{Binding SelectedProcess, Mode=TwoWay}">
-          <DataGrid.Columns>
-            <DataGridTextColumn Header="Process" Binding="{Binding ProcessName}" Width="160" />
-            <DataGridTextColumn Header="Runtime" Binding="{Binding RuntimeText}" Width="100">
-              <DataGridTextColumn.ElementStyle>
-                <Style TargetType="TextBlock">
-                  <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
-                  <Setter Property="FontWeight" Value="SemiBold" />
-                </Style>
-              </DataGridTextColumn.ElementStyle>
-            </DataGridTextColumn>
-            <DataGridTextColumn Header="Model" Binding="{Binding ModelText}" Width="220">
-              <DataGridTextColumn.ElementStyle>
-                <Style TargetType="TextBlock">
-                  <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
-                </Style>
-              </DataGridTextColumn.ElementStyle>
-            </DataGridTextColumn>
-            <DataGridTextColumn Header="PID" Binding="{Binding Pid}" Width="70">
-              <DataGridTextColumn.ElementStyle>
-                <Style TargetType="TextBlock">
-                  <Setter Property="HorizontalAlignment" Value="Right" />
-                  <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
-                </Style>
-              </DataGridTextColumn.ElementStyle>
-            </DataGridTextColumn>
-            <DataGridTextColumn Header="VRAM" Binding="{Binding VramText}" Width="90">
-              <DataGridTextColumn.HeaderStyle>
-                <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
-                  <Setter Property="ToolTip" Value="Local GPU memory reported by Windows WDDM. Does not necessarily sum to global device VRAM." />
-                </Style>
-              </DataGridTextColumn.HeaderStyle>
-              <DataGridTextColumn.ElementStyle>
-                <Style TargetType="TextBlock">
-                  <Setter Property="HorizontalAlignment" Value="Right" />
-                  <Setter Property="FontWeight" Value="SemiBold" />
-                  <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
-                </Style>
-              </DataGridTextColumn.ElementStyle>
-            </DataGridTextColumn>
-            <DataGridTextColumn Header="RAM" Binding="{Binding RamText}" Width="90">
-              <DataGridTextColumn.ElementStyle>
-                <Style TargetType="TextBlock">
-                  <Setter Property="HorizontalAlignment" Value="Right" />
-                  <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
-                </Style>
-              </DataGridTextColumn.ElementStyle>
-            </DataGridTextColumn>
-            <DataGridTextColumn Header="CPU" Binding="{Binding CpuText}" Width="70">
-              <DataGridTextColumn.ElementStyle>
-                <Style TargetType="TextBlock">
-                  <Setter Property="HorizontalAlignment" Value="Right" />
-                  <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
-                </Style>
-              </DataGridTextColumn.ElementStyle>
-            </DataGridTextColumn>
-          </DataGrid.Columns>
-        </DataGrid>
-      </DockPanel>
-    </Border>
-
-    <!-- Selected Process Inspector -->
-    <Border Grid.Row="4" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="14,10" Margin="0,12,0,0">
-      <Grid>
-        <!-- When Process Selected -->
-        <StackPanel Visibility="{Binding HasSelectedProcess, Converter={StaticResource BoolToVis}}">
-          <DockPanel LastChildFill="False" Margin="0,0,0,4">
-            <TextBlock Text="{Binding SelectedProcess.ProcessName, StringFormat='Selected: {0}'}" FontWeight="SemiBold" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}" DockPanel.Dock="Left" />
-            <TextBlock Text="{Binding SelectedProcess.Pid, StringFormat='PID {0}'}" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" DockPanel.Dock="Right" />
-          </DockPanel>
-
-          <!-- AI WORKLOAD Card (Visible when AI process is detected) -->
-          <Border Background="#161616" BorderBrush="{StaticResource AccentBrush}" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,2,0,6"
-                  Visibility="{Binding SelectedProcess.IsAiWorkload, Converter={StaticResource BoolToVis}}">
-            <StackPanel>
-              <DockPanel LastChildFill="False" Margin="0,0,0,6">
-                <TextBlock Text="AI WORKLOAD" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}" DockPanel.Dock="Left" />
-                <TextBlock Text="{Binding SelectedProcess.AiRuntimeConfidenceText, StringFormat='Confidence: {0}'}" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" DockPanel.Dock="Right" />
-              </DockPanel>
-
-              <Grid Margin="0,0,0,6">
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="*" />
-                  <ColumnDefinition Width="1.5*" />
-                  <ColumnDefinition Width="*" />
-                  <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-
-                <StackPanel Grid.Column="0">
-                  <TextBlock Text="Runtime" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" />
-                  <TextBlock Text="{Binding SelectedProcess.AiRuntimeText}" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,2,0,0" />
-                </StackPanel>
-
-                <StackPanel Grid.Column="1">
-                  <TextBlock Text="Model" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" />
-                  <TextBlock Text="{Binding SelectedProcess.AiModelNameText}" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,2,0,0" TextTrimming="CharacterEllipsis" />
-                </StackPanel>
-
-                <StackPanel Grid.Column="2">
-                  <TextBlock Text="Quantization" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" />
-                  <TextBlock Text="{Binding SelectedProcess.AiQuantizationText}" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,2,0,0" />
-                </StackPanel>
-
-                <StackPanel Grid.Column="3">
-                  <TextBlock Text="Parameters" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" />
-                  <TextBlock Text="{Binding SelectedProcess.AiParameterSizeText}" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,2,0,0" />
-                </StackPanel>
-              </Grid>
-
-              <Grid Margin="0,0,0,6">
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="*" />
-                  <ColumnDefinition Width="*" />
-                  <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-
-                <StackPanel Grid.Column="0">
-                  <TextBlock Text="Context configured" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" />
-                  <TextBlock Text="{Binding SelectedProcess.AiConfiguredContextText}" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,2,0,0" />
-                </StackPanel>
-
-                <StackPanel Grid.Column="1">
-                  <TextBlock Text="Runtime-reported VRAM" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" />
-                  <TextBlock Text="{Binding SelectedProcess.AiRuntimeReportedVramText}" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,2,0,0" />
-                </StackPanel>
-
-                <StackPanel Grid.Column="2">
-                  <TextBlock Text="Windows local GPU memory" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" />
-                  <TextBlock Text="{Binding SelectedProcess.LocalUsageText}" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,2,0,0" />
-                </StackPanel>
-              </Grid>
-
-              <TextBlock Text="Detection evidence:" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,2,0,2" />
-              <ItemsControl ItemsSource="{Binding SelectedProcess.AiEvidence}">
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate>
-                    <TextBlock Text="{Binding StringFormat='• {0}'}" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" Margin="4,1,0,1" />
-                  </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
-            </StackPanel>
-          </Border>
-
-          <StackPanel Margin="0,2,0,4">
-            <TextBlock Text="Executable:" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" />
-            <TextBox Text="{Binding SelectedProcess.ExecutablePath, Mode=OneWay}" IsReadOnly="True" Background="Transparent" Foreground="{StaticResource TextPrimaryBrush}" BorderThickness="0" FontSize="11" Padding="0" Cursor="Arrow" SelectionBrush="{StaticResource SelectionBrush}" />
-          </StackPanel>
-
-          <StackPanel Margin="0,2,0,6">
-            <TextBlock Text="Command line:" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" />
-            <TextBox Text="{Binding SelectedProcess.CommandLine, Mode=OneWay}" IsReadOnly="True" Background="Transparent" Foreground="{StaticResource TextPrimaryBrush}" BorderThickness="0" FontSize="11" TextWrapping="Wrap" MaxHeight="60" VerticalScrollBarVisibility="Auto" Padding="0" Cursor="Arrow" SelectionBrush="{StaticResource SelectionBrush}" />
-          </StackPanel>
-
-          <!-- GPU MEMORY — WINDOWS WDDM -->
-          <Border Background="#161616" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,4,0,0">
-            <StackPanel>
-              <TextBlock Text="GPU MEMORY — WINDOWS WDDM" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,6" />
-              <Grid>
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="*" />
-                  <ColumnDefinition Width="*" />
-                  <ColumnDefinition Width="*" />
-                  <ColumnDefinition Width="*" />
-                  <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-
-                <StackPanel Grid.Column="0">
-                  <TextBlock Text="Local usage" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" />
-                  <TextBlock Text="{Binding SelectedProcess.LocalUsageText}" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,2,0,0" />
-                </StackPanel>
-
-                <StackPanel Grid.Column="1">
-                  <TextBlock Text="Non-local usage" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" />
-                  <TextBlock Text="{Binding SelectedProcess.NonLocalUsageText}" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,2,0,0" />
-                </StackPanel>
-
-                <StackPanel Grid.Column="2">
-                  <TextBlock Text="Total committed" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" />
-                  <TextBlock Text="{Binding SelectedProcess.TotalCommittedText}" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,2,0,0" />
-                </StackPanel>
-
-                <StackPanel Grid.Column="3">
-                  <TextBlock Text="Dedicated usage" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" />
-                  <TextBlock Text="{Binding SelectedProcess.DedicatedUsageText}" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,2,0,0" />
-                </StackPanel>
-
-                <StackPanel Grid.Column="4">
-                  <TextBlock Text="Shared usage" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" />
-                  <TextBlock Text="{Binding SelectedProcess.SharedUsageText}" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,2,0,0" />
-                </StackPanel>
-              </Grid>
-            </StackPanel>
-          </Border>
-        </StackPanel>
-
-        <!-- Placeholder when nothing selected -->
-        <TextBlock Text="Select a process above to inspect executable path and command line."
-                   FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"
-                   VerticalAlignment="Center" HorizontalAlignment="Center"
-                   Visibility="{Binding HasSelectedProcess, Converter={StaticResource InvBoolToVis}}" />
-      </Grid>
-    </Border>
   </Grid>
 </Window>
