@@ -33,7 +33,7 @@ public sealed class Win32SystemMemoryProvider : ISystemMemoryProvider
 
         if (!GlobalMemoryStatusEx(ref memStatus))
         {
-            return new SystemMemorySnapshot(0, 0, 0);
+            return new SystemMemorySnapshot(null, null, null);
         }
 
         ulong total = memStatus.ullTotalPhys;

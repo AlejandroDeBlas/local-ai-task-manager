@@ -49,6 +49,10 @@ public sealed class WindowsSystemSnapshotProvider : ISystemSnapshotProvider
                 warnings.Add(new TelemetryWarning("NVIDIA", message, timestamp));
             }
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             warnings.Add(new TelemetryWarning("NVIDIA", $"NVIDIA telemetry error: {ex.Message}", timestamp));
@@ -59,10 +63,18 @@ public sealed class WindowsSystemSnapshotProvider : ISystemSnapshotProvider
         try
         {
             memory = _memoryProvider.GetSnapshot();
+            if (!memory.TotalPhysicalBytes.HasValue)
+            {
+                warnings.Add(new TelemetryWarning("Memory", "System memory query unavailable.", timestamp));
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
-            memory = new SystemMemorySnapshot(0, 0, 0);
+            memory = new SystemMemorySnapshot(null, null, null);
             warnings.Add(new TelemetryWarning("Memory", $"System memory query error: {ex.Message}", timestamp));
         }
 
@@ -72,11 +84,15 @@ public sealed class WindowsSystemSnapshotProvider : ISystemSnapshotProvider
         try
         {
             memorySamples = await _processMemoryProvider.GetProcessMemoryAsync(cancellationToken);
-            if (_processMemoryProvider is PdhGpuProcessMemoryProvider pdh && !string.IsNullOrWhiteSpace(pdh.LastError))
-            {
-                pdhFailed = true;
-                warnings.Add(new TelemetryWarning("PDH", $"GPU process telemetry unavailable: {pdh.LastError}", timestamp));
-            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (PdhTelemetryException ex)
+        {
+            pdhFailed = true;
+            warnings.Add(new TelemetryWarning("PDH", $"GPU process telemetry unavailable: {ex.Message}", timestamp));
         }
         catch (Exception ex)
         {
@@ -94,23 +110,33 @@ public sealed class WindowsSystemSnapshotProvider : ISystemSnapshotProvider
 
             foreach (var item in aggregated)
             {
-                if (item.DedicatedBytes == 0 && item.SharedBytes == 0)
+                bool hasAnyGpuMemory = (item.LocalBytes ?? 0) > 0 ||
+                                       (item.NonLocalBytes ?? 0) > 0 ||
+                                       (item.TotalCommittedBytes ?? 0) > 0 ||
+                                       (item.DedicatedBytes ?? 0) > 0 ||
+                                       (item.SharedBytes ?? 0) > 0;
+
+                if (!hasAnyGpuMemory)
                 {
                     continue;
                 }
 
-                ulong workingSet = 0;
+                ulong? workingSet = null;
                 TimeSpan? totalProcessorTime = null;
 
                 try
                 {
                     using var proc = Process.GetProcessById(item.Pid);
-                    workingSet = (ulong)Math.Max(0, proc.WorkingSet64);
+                    long ws = proc.WorkingSet64;
+                    if (ws >= 0)
+                    {
+                        workingSet = (ulong)ws;
+                    }
                     totalProcessorTime = proc.TotalProcessorTime;
                 }
                 catch
                 {
-                    // Process exited between query and sampling
+                    // Process exited between query and sampling, or access denied
                 }
 
                 ProcessMetadata metadata = _processInfoProvider.GetMetadata(item.Pid);
@@ -125,6 +151,9 @@ public sealed class WindowsSystemSnapshotProvider : ISystemSnapshotProvider
                     CommandLine: metadata.CommandLine,
                     WorkingSetBytes: workingSet,
                     CpuPercent: cpu,
+                    LocalGpuMemoryBytes: item.LocalBytes,
+                    NonLocalGpuMemoryBytes: item.NonLocalBytes,
+                    TotalCommittedGpuMemoryBytes: item.TotalCommittedBytes,
                     DedicatedGpuMemoryBytes: item.DedicatedBytes,
                     SharedGpuMemoryBytes: item.SharedBytes
                 ));
@@ -134,9 +163,9 @@ public sealed class WindowsSystemSnapshotProvider : ISystemSnapshotProvider
             _processInfoProvider.Cleanup(activePids);
             _cpuSampler.Cleanup(activePids);
 
-            // Sort by Dedicated GPU Memory descending
+            // Sort by Local GPU Memory descending (primary process VRAM metric)
             processSnapshots.Sort((a, b) =>
-                (b.DedicatedGpuMemoryBytes ?? 0).CompareTo(a.DedicatedGpuMemoryBytes ?? 0));
+                (b.LocalGpuMemoryBytes ?? 0).CompareTo(a.LocalGpuMemoryBytes ?? 0));
         }
 
         return new SystemSnapshot(

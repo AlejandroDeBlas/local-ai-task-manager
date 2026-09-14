@@ -6,11 +6,17 @@ namespace LocalAITaskManager.Windows.PerformanceCounters;
 
 public sealed class PdhGpuProcessMemoryProvider : IGpuProcessMemoryProvider, IDisposable
 {
+    private const string LocalCounterPath = @"\GPU Process Memory(*)\Local Usage";
+    private const string NonLocalCounterPath = @"\GPU Process Memory(*)\Non Local Usage";
+    private const string TotalCommittedCounterPath = @"\GPU Process Memory(*)\Total Committed";
     private const string DedicatedCounterPath = @"\GPU Process Memory(*)\Dedicated Usage";
     private const string SharedCounterPath = @"\GPU Process Memory(*)\Shared Usage";
 
     private readonly object _syncLock = new();
     private IntPtr _hQuery = IntPtr.Zero;
+    private IntPtr _hLocalCounter = IntPtr.Zero;
+    private IntPtr _hNonLocalCounter = IntPtr.Zero;
+    private IntPtr _hTotalCommittedCounter = IntPtr.Zero;
     private IntPtr _hDedicatedCounter = IntPtr.Zero;
     private IntPtr _hSharedCounter = IntPtr.Zero;
     private bool _initialized;
@@ -21,16 +27,16 @@ public sealed class PdhGpuProcessMemoryProvider : IGpuProcessMemoryProvider, IDi
 
     public bool IsAvailable => _initialized && _hQuery != IntPtr.Zero;
 
-    private bool EnsureInitialized()
+    private void EnsureInitialized()
     {
         if (_disposed)
         {
-            return false;
+            throw new ObjectDisposedException(nameof(PdhGpuProcessMemoryProvider));
         }
 
         if (_initialized && _hQuery != IntPtr.Zero)
         {
-            return true;
+            return;
         }
 
         CleanupQuery();
@@ -40,23 +46,47 @@ public sealed class PdhGpuProcessMemoryProvider : IGpuProcessMemoryProvider, IDi
         {
             _lastError = $"PdhOpenQueryW failed with error 0x{status:X8}.";
             _hQuery = IntPtr.Zero;
-            return false;
+            throw new PdhTelemetryException("PdhOpenQueryW failed", status);
+        }
+
+        status = PdhNative.PdhAddEnglishCounterW(_hQuery, LocalCounterPath, UIntPtr.Zero, out _hLocalCounter);
+        if (status != PdhNative.ERROR_SUCCESS)
+        {
+            _lastError = $"PdhAddEnglishCounterW failed for Local Usage (0x{status:X8}).";
+            CleanupQuery();
+            throw new PdhTelemetryException("PdhAddEnglishCounterW failed for Local Usage", status);
+        }
+
+        status = PdhNative.PdhAddEnglishCounterW(_hQuery, NonLocalCounterPath, UIntPtr.Zero, out _hNonLocalCounter);
+        if (status != PdhNative.ERROR_SUCCESS)
+        {
+            _lastError = $"PdhAddEnglishCounterW failed for Non Local Usage (0x{status:X8}).";
+            CleanupQuery();
+            throw new PdhTelemetryException("PdhAddEnglishCounterW failed for Non Local Usage", status);
+        }
+
+        status = PdhNative.PdhAddEnglishCounterW(_hQuery, TotalCommittedCounterPath, UIntPtr.Zero, out _hTotalCommittedCounter);
+        if (status != PdhNative.ERROR_SUCCESS)
+        {
+            _lastError = $"PdhAddEnglishCounterW failed for Total Committed (0x{status:X8}).";
+            CleanupQuery();
+            throw new PdhTelemetryException("PdhAddEnglishCounterW failed for Total Committed", status);
         }
 
         status = PdhNative.PdhAddEnglishCounterW(_hQuery, DedicatedCounterPath, UIntPtr.Zero, out _hDedicatedCounter);
         if (status != PdhNative.ERROR_SUCCESS)
         {
-            _lastError = $"PdhAddEnglishCounterW failed for Dedicated Usage with error 0x{status:X8}.";
+            _lastError = $"PdhAddEnglishCounterW failed for Dedicated Usage (0x{status:X8}).";
             CleanupQuery();
-            return false;
+            throw new PdhTelemetryException("PdhAddEnglishCounterW failed for Dedicated Usage", status);
         }
 
         status = PdhNative.PdhAddEnglishCounterW(_hQuery, SharedCounterPath, UIntPtr.Zero, out _hSharedCounter);
         if (status != PdhNative.ERROR_SUCCESS)
         {
-            _lastError = $"PdhAddEnglishCounterW failed for Shared Usage with error 0x{status:X8}.";
+            _lastError = $"PdhAddEnglishCounterW failed for Shared Usage (0x{status:X8}).";
             CleanupQuery();
-            return false;
+            throw new PdhTelemetryException("PdhAddEnglishCounterW failed for Shared Usage", status);
         }
 
         // Prime the query with an initial collection
@@ -64,7 +94,6 @@ public sealed class PdhGpuProcessMemoryProvider : IGpuProcessMemoryProvider, IDi
 
         _initialized = true;
         _lastError = null;
-        return true;
     }
 
     public Task<IReadOnlyList<GpuProcessMemorySample>> GetProcessMemoryAsync(CancellationToken cancellationToken = default)
@@ -76,9 +105,20 @@ public sealed class PdhGpuProcessMemoryProvider : IGpuProcessMemoryProvider, IDi
                 return Task.FromResult<IReadOnlyList<GpuProcessMemorySample>>([]);
             }
 
-            if (!EnsureInitialized())
+            cancellationToken.ThrowIfCancellationRequested();
+
+            try
             {
-                return Task.FromResult<IReadOnlyList<GpuProcessMemorySample>>([]);
+                EnsureInitialized();
+            }
+            catch (PdhTelemetryException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _lastError = ex.Message;
+                throw new PdhTelemetryException($"Initialization error: {ex.Message}", 0xFFFFFFFF);
             }
 
             cancellationToken.ThrowIfCancellationRequested();
@@ -87,15 +127,20 @@ public sealed class PdhGpuProcessMemoryProvider : IGpuProcessMemoryProvider, IDi
             if (status != PdhNative.ERROR_SUCCESS)
             {
                 _lastError = $"PdhCollectQueryData failed with error 0x{status:X8}.";
-                // Invalidate query to reinitialize on next attempt
                 CleanupQuery();
-                return Task.FromResult<IReadOnlyList<GpuProcessMemorySample>>([]);
+                throw new PdhTelemetryException("PdhCollectQueryData failed", status);
             }
 
-            var dedicatedMap = CollectCounterMap(_hDedicatedCounter);
-            var sharedMap = CollectCounterMap(_hSharedCounter);
+            var localMap = CollectCounterMap(_hLocalCounter, "Local Usage");
+            var nonLocalMap = CollectCounterMap(_hNonLocalCounter, "Non Local Usage");
+            var totalCommittedMap = CollectCounterMap(_hTotalCommittedCounter, "Total Committed");
+            var dedicatedMap = CollectCounterMap(_hDedicatedCounter, "Dedicated Usage");
+            var sharedMap = CollectCounterMap(_hSharedCounter, "Shared Usage");
 
-            var allInstances = new HashSet<string>(dedicatedMap.Keys, StringComparer.OrdinalIgnoreCase);
+            var allInstances = new HashSet<string>(localMap.Keys, StringComparer.OrdinalIgnoreCase);
+            allInstances.UnionWith(nonLocalMap.Keys);
+            allInstances.UnionWith(totalCommittedMap.Keys);
+            allInstances.UnionWith(dedicatedMap.Keys);
             allInstances.UnionWith(sharedMap.Keys);
 
             var samples = new List<GpuProcessMemorySample>(allInstances.Count);
@@ -104,11 +149,17 @@ public sealed class PdhGpuProcessMemoryProvider : IGpuProcessMemoryProvider, IDi
             {
                 if (GpuProcessCounterInstanceParser.TryParse(instance, out ParsedInstanceInfo? info) && info is not null)
                 {
-                    dedicatedMap.TryGetValue(instance, out ulong dedicated);
-                    sharedMap.TryGetValue(instance, out ulong shared);
+                    localMap.TryGetValue(instance, out ulong? local);
+                    nonLocalMap.TryGetValue(instance, out ulong? nonLocal);
+                    totalCommittedMap.TryGetValue(instance, out ulong? totalCommitted);
+                    dedicatedMap.TryGetValue(instance, out ulong? dedicated);
+                    sharedMap.TryGetValue(instance, out ulong? shared);
 
                     samples.Add(new GpuProcessMemorySample(
                         Pid: info.Pid,
+                        LocalBytes: local,
+                        NonLocalBytes: nonLocal,
+                        TotalCommittedBytes: totalCommitted,
                         DedicatedBytes: dedicated,
                         SharedBytes: shared,
                         PhysicalAdapterIndex: info.PhysicalAdapterIndex,
@@ -121,9 +172,9 @@ public sealed class PdhGpuProcessMemoryProvider : IGpuProcessMemoryProvider, IDi
         }
     }
 
-    private static Dictionary<string, ulong> CollectCounterMap(IntPtr hCounter)
+    private static Dictionary<string, ulong?> CollectCounterMap(IntPtr hCounter, string counterName)
     {
-        var map = new Dictionary<string, ulong>(StringComparer.OrdinalIgnoreCase);
+        var map = new Dictionary<string, ulong?>(StringComparer.OrdinalIgnoreCase);
         if (hCounter == IntPtr.Zero)
         {
             return map;
@@ -140,9 +191,15 @@ public sealed class PdhGpuProcessMemoryProvider : IGpuProcessMemoryProvider, IDi
             IntPtr.Zero
         );
 
-        if (status != PdhNative.PDH_MORE_DATA || bufferSize == 0 || itemCount == 0)
+        // Valid empty cases
+        if (status is PdhNative.PDH_CSTATUS_NO_INSTANCE or PdhNative.PDH_NO_DATA || bufferSize == 0 || itemCount == 0)
         {
             return map;
+        }
+
+        if (status != PdhNative.PDH_MORE_DATA)
+        {
+            throw new PdhTelemetryException($"PdhGetFormattedCounterArrayW buffer sizing failed for {counterName}", status);
         }
 
         IntPtr pBuffer = Marshal.AllocHGlobal((int)bufferSize);
@@ -158,7 +215,7 @@ public sealed class PdhGpuProcessMemoryProvider : IGpuProcessMemoryProvider, IDi
 
             if (status != PdhNative.ERROR_SUCCESS)
             {
-                return map;
+                throw new PdhTelemetryException($"PdhGetFormattedCounterArrayW collection failed for {counterName}", status);
             }
 
             int itemSize = Marshal.SizeOf<PdhFmtCounterValueItem>();
@@ -172,17 +229,8 @@ public sealed class PdhGpuProcessMemoryProvider : IGpuProcessMemoryProvider, IDi
                     string? instanceName = Marshal.PtrToStringUni(item.szName);
                     if (!string.IsNullOrWhiteSpace(instanceName))
                     {
-                        ulong value = 0;
-                        if (item.FmtValue.CStatus is PdhNative.PDH_CSTATUS_VALID_DATA or PdhNative.PDH_CSTATUS_NEW_DATA)
-                        {
-                            long rawVal = item.FmtValue.largeValue;
-                            if (rawVal > 0)
-                            {
-                                value = (ulong)rawVal;
-                            }
-                        }
-
-                        map[instanceName] = value;
+                        ulong? val = PdhCounterFormatter.ExtractItemValue(item.FmtValue);
+                        map[instanceName] = val;
                     }
                 }
             }
@@ -198,6 +246,9 @@ public sealed class PdhGpuProcessMemoryProvider : IGpuProcessMemoryProvider, IDi
     private void CleanupQuery()
     {
         _initialized = false;
+        _hLocalCounter = IntPtr.Zero;
+        _hNonLocalCounter = IntPtr.Zero;
+        _hTotalCommittedCounter = IntPtr.Zero;
         _hDedicatedCounter = IntPtr.Zero;
         _hSharedCounter = IntPtr.Zero;
 

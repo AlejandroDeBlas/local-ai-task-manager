@@ -6,7 +6,7 @@ namespace LocalAITaskManager.App.ViewModels;
 public sealed class GpuDeviceViewModel : ViewModelBase
 {
     private string _name = string.Empty;
-    private string _vramText = string.Empty;
+    private string _vramText = "—";
     private double _vramPercent;
     private string _gpuUtilizationText = "—";
     private string _temperatureText = "—";
@@ -59,8 +59,8 @@ public sealed class GpuDeviceViewModel : ViewModelBase
     {
         Name = snapshot.Name;
         VramText = ByteFormatter.FormatRatio(snapshot.UsedVramBytes, snapshot.TotalVramBytes);
-        VramPercent = snapshot.TotalVramBytes > 0
-            ? Math.Clamp((double)snapshot.UsedVramBytes / snapshot.TotalVramBytes * 100.0, 0.0, 100.0)
+        VramPercent = snapshot.TotalVramBytes is > 0 && snapshot.UsedVramBytes.HasValue
+            ? Math.Clamp((double)snapshot.UsedVramBytes.Value / snapshot.TotalVramBytes.Value * 100.0, 0.0, 100.0)
             : 0.0;
 
         GpuUtilizationText = snapshot.GpuUtilizationPercent.HasValue

@@ -54,8 +54,8 @@ public sealed class NvmlGpuTelemetryProvider : IGpuTelemetryProvider, IDisposabl
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                ulong totalVram = 0;
-                ulong usedVram = 0;
+                ulong? totalVram = null;
+                ulong? usedVram = null;
 
                 NvmlReturn memRet = _nvml.GetDeviceMemoryInfo(handle, out NvmlMemory mem);
                 if (memRet == NvmlReturn.Success)

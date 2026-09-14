@@ -57,11 +57,12 @@ public partial class MainWindow : Window
     {
         try
         {
-            _samplerService.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            // Bounded wait with cancellation to prevent blocking UI thread on close
+            _samplerService.DisposeAsync().AsTask().Wait(TimeSpan.FromMilliseconds(500));
         }
         catch
         {
-            // Best-effort cleanup
+            // Best-effort bounded shutdown
         }
 
         _gpuProvider.Dispose();

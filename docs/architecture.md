@@ -41,18 +41,19 @@ LocalAITaskManager.Core (Domain entities, abstractions, formatters, pure logic)
 ## Telemetry Flow
 
 ```text
-NVML (Global GPU, VRAM, temp, power) ───┐
-PDH (Per-process dedicated/shared VRAM) ─┤
-Win32 RAM (Physical total/used memory) ──┼──> WindowsSystemSnapshotProvider
-Process APIs (Working set, CPU time) ───┤               │
-WMI metadata (Cached command line) ─────┘               ▼
-                                                  SystemSnapshot (Immutable)
-                                                        │
-                                                        ▼
-                                                  MainViewModel
-                                                        │
-                                                        ▼
-                                                    WPF View
+NVML (Global GPU, VRAM, temp, power) ───────────┐
+PDH / GPU Process Memory                        │
+ ├─ Local Usage (Primary process VRAM)          │
+ ├─ Non Local Usage                             ├──> WindowsSystemSnapshotProvider
+ ├─ Total Committed                             │               │
+ ├─ Dedicated Usage                             │               ▼
+ └─ Shared Usage ───────────────────────────────┤         SystemSnapshot (Immutable)
+Win32 RAM (Physical total/used memory) ─────────┤               │
+Process APIs (Working set, CPU time) ───────────┤               ▼
+WMI metadata (Cached command line) ─────────────┘         MainViewModel
+                                                                │
+                                                                ▼
+                                                            WPF View
 ```
 
 ## Why Process VRAM Does Not Use NVML Under WDDM
@@ -64,11 +65,14 @@ As officially documented in NVIDIA's NVML API documentation:
 
 Consequently, querying `nvmlDeviceGetComputeRunningProcesses` or `nvmlDeviceGetGraphicsRunningProcesses` yields `usedGpuMemory = NVML_VALUE_NOT_AVAILABLE` for process memory allocations.
 
-To obtain accurate, per-process dedicated and shared GPU memory without requiring elevated privileges, **Local AI Task Manager** uses the Windows Performance Data Helper (PDH) querying:
-* `\GPU Process Memory(*)\Dedicated Usage`
-* `\GPU Process Memory(*)\Shared Usage`
+To obtain accurate, per-process GPU memory without requiring elevated privileges, **Local AI Task Manager** queries the Windows Performance Data Helper (PDH) counter set `\GPU Process Memory(*)`:
+* **`Local Usage` (Primary process "VRAM" metric):** Memory currently resident on the local video memory of the GPU adapter. This serves as the closest operational metric for physical VRAM consumption by the process.
+* **`Non Local Usage`:** Memory allocated by or on behalf of the process residing outside the GPU adapter's local memory (e.g. system RAM).
+* **`Total Committed`:** Total virtual video memory currently committed by the video memory manager for this process.
+* **`Dedicated Usage`:** Dedicated memory allocated across the process lifetime (which may differ from actively resident local memory).
+* **`Shared Usage`:** System memory shared with the GPU.
 
-Instance strings (e.g. `pid_18420_luid_0x00000000_0x0000ABCD_phys_0`) are parsed using `GpuProcessCounterInstanceParser` and aggregated by PID across physical adapters.
+Instance strings (e.g. `pid_18420_luid_0x00000000_0x0000ABCD_phys_0#1`) are parsed using `GpuProcessCounterInstanceParser` and aggregated by PID across physical adapters. Duplicate instance suffixes (`#1`, `#2`) are treated as distinct legitimate counter instances and aggregated accordingly.
 
 ## Process Metadata & CPU Sampling
 
@@ -76,3 +80,4 @@ Instance strings (e.g. `pid_18420_luid_0x00000000_0x0000ABCD_phys_0`) are parsed
 * **CPU Utilization:** Win32 does not provide an instantaneous CPU% per process. Instead, `Process.TotalProcessorTime` is sampled across intervals. The CPU usage is computed as:
   $$\text{CPU \%} = \frac{\Delta \text{TotalProcessorTime}}{\Delta \text{WallClock} \times \text{Environment.ProcessorCount}} \times 100$$
   The first sample yields `null` to avoid fabricating metrics. Dead processes have their state purged automatically.
+* **Unavailable vs Zero:** All domain models explicitly preserve `null` for unavailable or inaccessible metrics (e.g. Working Set of a terminated process, failed NVML memory readings, or invalid PDH `CStatus`).

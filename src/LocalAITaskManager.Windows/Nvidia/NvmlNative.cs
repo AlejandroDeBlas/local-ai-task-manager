@@ -130,12 +130,8 @@ public sealed class NvmlNative : IDisposable
         string systemRoot = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
         string dchPath = Path.Combine(systemRoot, "System32", "nvml.dll");
 
-        string? programW6432 = Environment.GetEnvironmentVariable("ProgramW6432");
-        if (string.IsNullOrWhiteSpace(programW6432))
-        {
-            programW6432 = @"C:\Program Files";
-        }
-        string standardPath = Path.Combine(programW6432, "NVIDIA Corporation", "NVSMI", "nvml.dll");
+        string programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+        string standardPath = Path.Combine(programFiles, "NVIDIA Corporation", "NVSMI", "nvml.dll");
 
         string? resolvedPath = null;
         if (File.Exists(dchPath))

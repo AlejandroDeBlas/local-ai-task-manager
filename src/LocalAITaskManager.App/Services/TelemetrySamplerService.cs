@@ -12,6 +12,8 @@ public sealed class TelemetrySamplerService : IAsyncDisposable
     private Task? _samplingTask;
     private int _isRunning;
 
+    public string? LastUnexpectedError { get; private set; }
+
     public TelemetrySamplerService(
         ISystemSnapshotProvider snapshotProvider,
         Action<SystemSnapshot> onSnapshotReady,
@@ -37,12 +39,12 @@ public sealed class TelemetrySamplerService : IAsyncDisposable
         using var timer = new PeriodicTimer(_interval);
         CancellationToken ct = _cts.Token;
 
-        // Perform immediate first collection
-        await CollectOnceAsync(ct);
-
-        while (!ct.IsCancellationRequested)
+        try
         {
-            try
+            // Perform immediate first collection
+            await CollectOnceAsync(ct);
+
+            while (!ct.IsCancellationRequested)
             {
                 if (!await timer.WaitForNextTickAsync(ct))
                 {
@@ -51,14 +53,14 @@ public sealed class TelemetrySamplerService : IAsyncDisposable
 
                 await CollectOnceAsync(ct);
             }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
-            catch
-            {
-                // Prevent loop termination from unexpected exceptions
-            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Clean cancellation during shutdown
+        }
+        catch (Exception ex)
+        {
+            LastUnexpectedError = $"{ex.GetType().Name}: {ex.Message}";
         }
     }
 
@@ -74,11 +76,11 @@ public sealed class TelemetrySamplerService : IAsyncDisposable
         }
         catch (OperationCanceledException)
         {
-            // Clean shutdown
+            throw;
         }
-        catch
+        catch (Exception ex)
         {
-            // Protect sampler
+            LastUnexpectedError = $"{ex.GetType().Name}: {ex.Message}";
         }
     }
 
@@ -96,6 +98,10 @@ public sealed class TelemetrySamplerService : IAsyncDisposable
             try
             {
                 await _samplingTask;
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected
             }
             catch
             {

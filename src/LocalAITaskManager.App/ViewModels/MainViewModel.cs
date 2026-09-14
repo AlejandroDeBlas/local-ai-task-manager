@@ -99,8 +99,8 @@ public sealed class MainViewModel : ViewModelBase
 
         // 3. System RAM
         SystemRamText = ByteFormatter.FormatRatio(snapshot.Memory.UsedPhysicalBytes, snapshot.Memory.TotalPhysicalBytes);
-        SystemRamPercent = snapshot.Memory.TotalPhysicalBytes > 0
-            ? Math.Clamp((double)snapshot.Memory.UsedPhysicalBytes / snapshot.Memory.TotalPhysicalBytes * 100.0, 0.0, 100.0)
+        SystemRamPercent = snapshot.Memory.TotalPhysicalBytes is > 0 && snapshot.Memory.UsedPhysicalBytes.HasValue
+            ? Math.Clamp((double)snapshot.Memory.UsedPhysicalBytes.Value / snapshot.Memory.TotalPhysicalBytes.Value * 100.0, 0.0, 100.0)
             : 0.0;
 
         // 4. Processes

@@ -45,10 +45,15 @@ public static class ByteFormatter
         return string.Format(CultureInfo.InvariantCulture, "{0} B", value);
     }
 
-    public static string FormatRatio(ulong usedBytes, ulong totalBytes)
+    public static string FormatRatio(ulong? usedBytes, ulong? totalBytes, string unavailableFallback = "—")
     {
-        double usedGb = (double)usedBytes / OneGb;
-        double totalGb = (double)totalBytes / OneGb;
+        if (!usedBytes.HasValue || !totalBytes.HasValue)
+        {
+            return unavailableFallback;
+        }
+
+        double usedGb = (double)usedBytes.Value / OneGb;
+        double totalGb = (double)totalBytes.Value / OneGb;
 
         return string.Format(CultureInfo.InvariantCulture, "{0:0.0} / {1:0.0} GB", usedGb, totalGb);
     }
