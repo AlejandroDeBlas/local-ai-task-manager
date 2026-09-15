@@ -222,6 +222,7 @@ public sealed class MainViewModel : ViewModelBase
                 if (InspectedMemberProcess != null)
                 {
                     InspectedMemberProcess = matched.MemberProcesses.FirstOrDefault(m => m.Pid == InspectedMemberProcess.Pid)
+                        ?? matched.MemberProcesses.FirstOrDefault(m => m.Pid == matched.PrimaryPid)
                         ?? matched.MemberProcesses.FirstOrDefault();
                 }
                 else

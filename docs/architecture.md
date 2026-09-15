@@ -77,10 +77,21 @@ The `AiWorkloadComposer` transforms raw detected processes into first-class user
 2. **Composition Semantics:**
    - **Single Model (Case 1):** If the group contains exactly 1 model assignment, a single `Model` workload is generated containing both the controller process and runner process. The primary PID is set to the runner executing the model, and primary VRAM is the runner's WDDM Local Usage.
    - **Multi-Model (Case 2):** If the group contains multiple loaded models / runner processes (e.g. concurrent Ollama models), each runner becomes a distinct `Model` workload. The shared controller/service is separated into a dedicated `RuntimeService` workload.
-   - **Runtime Only (Case 3):** If no models are detected (e.g. idle Ollama service or LM Studio), a `RuntimeOnly` workload is generated. The primary PID is selected by root PID with GPU memory > largest GPU consumer > lowest PID.
-3. **Unique PID Invariant:** Every process PID belongs to at most one workload (`ProcessPids` sets across all workloads are strictly disjoint).
-4. **Other GPU Processes:** All active GPU processes not attributed to an AI workload are automatically segregated into `OTHER GPU PROCESSES`.
-5. **Deterministic WorkloadId:** Workload IDs are purely deterministic strings (e.g. `ollama:model:qwen2.5:1.5b`, `llama.cpp:model:46588`, `lmstudio:runtime:1234`) enabling stable keyed reconciliation in the UI.
+   - **Runtime Only (Case 3):** If no models are detected (e.g. idle Ollama service or LM Studio), a `RuntimeOnly` workload is generated.
+3. **Stable Logical Identity vs. Representative Primary PID:**
+   - **Stable `WorkloadId`:** The logical identity of a workload is strictly decoupled from telemetry fluctuations.
+     - `Model`: `${runtime}:model:${modelProc.Pid}` (anchored to the model runner PID).
+     - `RuntimeService`: `${runtime}:service:${groupRoot}` (anchored to the runtime group root PID).
+     - `RuntimeOnly`: `${runtime}:runtime:${groupRoot}` (anchored to the runtime group root PID).
+     Even when processes inside a runtime start, exit, or shift GPU memory consumption, the `WorkloadId` remains invariant, preserving UI selection and inspection state without flickering or resetting.
+   - **Primary Process Selection (`SelectPrimaryPid`):** Chooses the most representative member process for card-level metrics:
+     1. Finds the member process with the greatest reported `LocalGpuMemoryBytes`.
+     2. In case of a tie for maximum memory, prefers the runtime root PID if it is among the tied processes; otherwise chooses the lowest PID among the tied processes.
+     3. If telemetry is unavailable for all member processes (`LocalGpuMemoryBytes` is `null`), prefers the runtime root PID if present; otherwise chooses the lowest PID.
+     4. Distinctly differentiates `0 B` (valid reported metric, `HasValue == true`) from `null` (unavailable telemetry).
+4. **Unique PID Invariant:** Every process PID belongs to at most one workload (`ProcessPids` sets across all workloads are strictly disjoint).
+5. **Other GPU Processes:** All active GPU processes not attributed to an AI workload are automatically segregated into `OTHER GPU PROCESSES`.
+6. **Deterministic WorkloadId:** Workload IDs are purely deterministic strings enabling stable keyed reconciliation in the UI.
 
 ## Source-of-Truth Hierarchy
 

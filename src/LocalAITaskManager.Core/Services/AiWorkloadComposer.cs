@@ -96,7 +96,7 @@ public sealed class AiWorkloadComposer : IAiWorkloadComposer
                     DetectionConfidence maxRuntimeConfidence = nonModelProcesses.Max(p => p.RuntimeConfidence);
 
                     workloads.Add(new AiWorkloadSnapshot(
-                        WorkloadId: $"{runtime.ToString().ToLowerInvariant()}:service:{primaryServicePid}",
+                        WorkloadId: $"{runtime.ToString().ToLowerInvariant()}:service:{groupRoot}",
                         Kind: AiWorkloadKind.RuntimeService,
                         Runtime: runtime,
                         DisplayName: GetRuntimeServicesDisplayName(runtime),
@@ -122,7 +122,7 @@ public sealed class AiWorkloadComposer : IAiWorkloadComposer
                 int? runtimeRoot = nonModelProcesses.FirstOrDefault(p => p.RuntimeRootPid != null)?.RuntimeRootPid;
 
                 workloads.Add(new AiWorkloadSnapshot(
-                    WorkloadId: $"{runtime.ToString().ToLowerInvariant()}:runtime:{primaryPid}",
+                    WorkloadId: $"{runtime.ToString().ToLowerInvariant()}:runtime:{groupRoot}",
                     Kind: AiWorkloadKind.RuntimeOnly,
                     Runtime: runtime,
                     DisplayName: GetRuntimeDisplayName(runtime),
@@ -170,40 +170,40 @@ public sealed class AiWorkloadComposer : IAiWorkloadComposer
         int? rootPid,
         IReadOnlyDictionary<int, GpuProcessSnapshot> processLookup)
     {
+        if (processes.Count == 0)
+        {
+            return 0;
+        }
+
         if (processes.Count == 1)
         {
             return processes[0].Pid;
         }
 
-        if (rootPid.HasValue)
+        var processesWithGpu = processes
+            .Where(p => processLookup.TryGetValue(p.Pid, out var snap) && snap.LocalGpuMemoryBytes.HasValue)
+            .Select(p => (p.Pid, Memory: processLookup[p.Pid].LocalGpuMemoryBytes!.Value))
+            .ToList();
+
+        if (processesWithGpu.Count > 0)
         {
-            var rootProc = processes.FirstOrDefault(p => p.Pid == rootPid.Value);
-            if (rootProc != null &&
-                processLookup.TryGetValue(rootPid.Value, out var snap) &&
-                snap.LocalGpuMemoryBytes is > 0)
+            ulong maxMemory = processesWithGpu.Max(x => x.Memory);
+            var tiedPids = processesWithGpu
+                .Where(x => x.Memory == maxMemory)
+                .Select(x => x.Pid)
+                .ToList();
+
+            if (rootPid.HasValue && tiedPids.Contains(rootPid.Value))
             {
                 return rootPid.Value;
             }
+
+            return tiedPids.Min();
         }
 
-        AiProcessIdentity? bestProc = null;
-        ulong highestMemory = 0;
-
-        foreach (var proc in processes)
+        if (rootPid.HasValue && processes.Any(p => p.Pid == rootPid.Value))
         {
-            if (processLookup.TryGetValue(proc.Pid, out var snap) && snap.LocalGpuMemoryBytes.HasValue)
-            {
-                if (snap.LocalGpuMemoryBytes.Value > highestMemory)
-                {
-                    highestMemory = snap.LocalGpuMemoryBytes.Value;
-                    bestProc = proc;
-                }
-            }
-        }
-
-        if (bestProc != null)
-        {
-            return bestProc.Pid;
+            return rootPid.Value;
         }
 
         return processes.Min(p => p.Pid);

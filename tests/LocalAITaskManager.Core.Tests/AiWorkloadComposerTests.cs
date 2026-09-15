@@ -177,7 +177,8 @@ public class AiWorkloadComposerTests
         Assert.Equal(AiRuntimeKind.LmStudio, w.Runtime);
         Assert.Equal("LM Studio", w.DisplayName);
         Assert.Null(w.Model);
-        Assert.Equal(400, w.PrimaryPid); // root has GPU consumption > 0
+        Assert.Equal(401, w.PrimaryPid); // child1 has greatest GPU consumption (2 GB vs 50 MB)
+        Assert.Equal("lmstudio:runtime:400", w.WorkloadId); // WorkloadId is anchored to groupRoot
         Assert.Equal(3, w.ProcessPids.Count);
     }
 
@@ -264,5 +265,151 @@ public class AiWorkloadComposerTests
         Assert.Null(w.PrimaryLocalGpuMemoryBytes);
         Assert.Null(w.PrimaryWorkingSetBytes);
         Assert.Null(w.PrimaryCpuPercent);
+    }
+
+    [Fact]
+    public void Test18_RuntimeOnly_WorkloadIdStableAcrossPrimaryPidChange()
+    {
+        // t0: child 401 has highest VRAM (2 GB), root 400 has 50 MB
+        var root_t0 = CreateProcess(400, "LM Studio.exe", localGpu: 50000000);
+        var child_t0 = CreateProcess(401, "child.exe", localGpu: 2000000000);
+        var idRoot = new AiProcessIdentity(400, AiRuntimeKind.LmStudio, DetectionConfidence.Confirmed, null, DetectionConfidence.None, [], 400);
+        var idChild = new AiProcessIdentity(401, AiRuntimeKind.LmStudio, DetectionConfidence.Medium, null, DetectionConfidence.None, [], 400);
+
+        var snap1 = _composer.Compose(CreateSnapshot(root_t0, child_t0), CreateDetection(idRoot, idChild));
+        Assert.Single(snap1);
+        Assert.Equal(401, snap1[0].PrimaryPid);
+        Assert.Equal("lmstudio:runtime:400", snap1[0].WorkloadId);
+
+        // t1: child 401 drops VRAM (10 MB), root 400 has 50 MB -> root becomes primary PID
+        var root_t1 = CreateProcess(400, "LM Studio.exe", localGpu: 50000000);
+        var child_t1 = CreateProcess(401, "child.exe", localGpu: 10000000);
+
+        var snap2 = _composer.Compose(CreateSnapshot(root_t1, child_t1), CreateDetection(idRoot, idChild));
+        Assert.Single(snap2);
+        Assert.Equal(400, snap2[0].PrimaryPid);
+        Assert.Equal("lmstudio:runtime:400", snap2[0].WorkloadId);
+
+        // WorkloadId identity remained stable despite primary PID flip
+        Assert.Equal(snap1[0].WorkloadId, snap2[0].WorkloadId);
+    }
+
+    [Fact]
+    public void Test19_RuntimeService_WorkloadIdStableAcrossPrimaryPidChange()
+    {
+        // Ollama with 2 models: root 100, helper 101, runner1 200, runner2 300
+        var m1 = new DetectedModelIdentity("m1", null, null, null, null, null);
+        var m2 = new DetectedModelIdentity("m2", null, null, null, null, null);
+
+        var idRoot = new AiProcessIdentity(100, AiRuntimeKind.Ollama, DetectionConfidence.Confirmed, null, DetectionConfidence.None, [], 100);
+        var idHelper = new AiProcessIdentity(101, AiRuntimeKind.Ollama, DetectionConfidence.Confirmed, null, DetectionConfidence.None, [], 100);
+        var idR1 = new AiProcessIdentity(200, AiRuntimeKind.Ollama, DetectionConfidence.Confirmed, m1, DetectionConfidence.Confirmed, [], 100);
+        var idR2 = new AiProcessIdentity(300, AiRuntimeKind.Ollama, DetectionConfidence.Confirmed, m2, DetectionConfidence.Confirmed, [], 100);
+
+        // t0: helper 101 has 50 MB, root 100 has 10 MB
+        var r1 = CreateProcess(200, "llama-server.exe", localGpu: 3000000000);
+        var r2 = CreateProcess(300, "llama-server.exe", localGpu: 2000000000);
+        var root_t0 = CreateProcess(100, "ollama.exe", localGpu: 10000000);
+        var helper_t0 = CreateProcess(101, "helper.exe", localGpu: 50000000);
+
+        var snap1 = _composer.Compose(CreateSnapshot(root_t0, helper_t0, r1, r2), CreateDetection(idRoot, idHelper, idR1, idR2));
+        var svc1 = snap1.First(w => w.Kind == AiWorkloadKind.RuntimeService);
+        Assert.Equal(101, svc1.PrimaryPid);
+        Assert.Equal("ollama:service:100", svc1.WorkloadId);
+
+        // t1: helper 101 drops to 5 MB, root 100 has 10 MB -> root becomes primary PID
+        var root_t1 = CreateProcess(100, "ollama.exe", localGpu: 10000000);
+        var helper_t1 = CreateProcess(101, "helper.exe", localGpu: 5000000);
+
+        var snap2 = _composer.Compose(CreateSnapshot(root_t1, helper_t1, r1, r2), CreateDetection(idRoot, idHelper, idR1, idR2));
+        var svc2 = snap2.First(w => w.Kind == AiWorkloadKind.RuntimeService);
+        Assert.Equal(100, svc2.PrimaryPid);
+        Assert.Equal("ollama:service:100", svc2.WorkloadId);
+
+        // Service WorkloadId identity remained stable despite primary PID flip
+        Assert.Equal(svc1.WorkloadId, svc2.WorkloadId);
+    }
+
+    [Fact]
+    public void Test20_SelectPrimaryPid_GreatestGpuConsumerChosen()
+    {
+        var p1 = CreateProcess(10, "proc1.exe", localGpu: 100000000);
+        var p2 = CreateProcess(20, "proc2.exe", localGpu: 500000000);
+        var p3 = CreateProcess(30, "proc3.exe", localGpu: 250000000);
+
+        var id1 = new AiProcessIdentity(10, AiRuntimeKind.LmStudio, DetectionConfidence.Medium, null, DetectionConfidence.None, [], 10);
+        var id2 = new AiProcessIdentity(20, AiRuntimeKind.LmStudio, DetectionConfidence.Medium, null, DetectionConfidence.None, [], 10);
+        var id3 = new AiProcessIdentity(30, AiRuntimeKind.LmStudio, DetectionConfidence.Medium, null, DetectionConfidence.None, [], 10);
+
+        var result = _composer.Compose(CreateSnapshot(p1, p2, p3), CreateDetection(id1, id2, id3));
+        Assert.Single(result);
+        Assert.Equal(20, result[0].PrimaryPid);
+        Assert.Equal(500000000UL, result[0].PrimaryLocalGpuMemoryBytes);
+    }
+
+    [Fact]
+    public void Test21_SelectPrimaryPid_TiePrefersRoot()
+    {
+        var root = CreateProcess(100, "root.exe", localGpu: 500000000);
+        var child = CreateProcess(200, "child.exe", localGpu: 500000000);
+
+        var idRoot = new AiProcessIdentity(100, AiRuntimeKind.LmStudio, DetectionConfidence.Confirmed, null, DetectionConfidence.None, [], 100);
+        var idChild = new AiProcessIdentity(200, AiRuntimeKind.LmStudio, DetectionConfidence.Medium, null, DetectionConfidence.None, [], 100);
+
+        var result = _composer.Compose(CreateSnapshot(root, child), CreateDetection(idRoot, idChild));
+        Assert.Single(result);
+        Assert.Equal(100, result[0].PrimaryPid);
+    }
+
+    [Fact]
+    public void Test22_SelectPrimaryPid_TieWithoutRootPrefersLowestPid()
+    {
+        var root = CreateProcess(100, "root.exe", localGpu: 50000000);
+        var c1 = CreateProcess(300, "child1.exe", localGpu: 500000000);
+        var c2 = CreateProcess(200, "child2.exe", localGpu: 500000000);
+
+        var idRoot = new AiProcessIdentity(100, AiRuntimeKind.LmStudio, DetectionConfidence.Confirmed, null, DetectionConfidence.None, [], 100);
+        var idC1 = new AiProcessIdentity(300, AiRuntimeKind.LmStudio, DetectionConfidence.Medium, null, DetectionConfidence.None, [], 100);
+        var idC2 = new AiProcessIdentity(200, AiRuntimeKind.LmStudio, DetectionConfidence.Medium, null, DetectionConfidence.None, [], 100);
+
+        var result = _composer.Compose(CreateSnapshot(root, c1, c2), CreateDetection(idRoot, idC1, idC2));
+        Assert.Single(result);
+        Assert.Equal(200, result[0].PrimaryPid);
+    }
+
+    [Fact]
+    public void Test23_SelectPrimaryPid_AllTelemetryUnavailablePrefersRoot()
+    {
+        var root = CreateProcess(100, "root.exe", localGpu: null);
+        var c1 = CreateProcess(200, "child1.exe", localGpu: null);
+        var c2 = CreateProcess(300, "child2.exe", localGpu: null);
+
+        var idRoot = new AiProcessIdentity(100, AiRuntimeKind.LmStudio, DetectionConfidence.Confirmed, null, DetectionConfidence.None, [], 100);
+        var idC1 = new AiProcessIdentity(200, AiRuntimeKind.LmStudio, DetectionConfidence.Medium, null, DetectionConfidence.None, [], 100);
+        var idC2 = new AiProcessIdentity(300, AiRuntimeKind.LmStudio, DetectionConfidence.Medium, null, DetectionConfidence.None, [], 100);
+
+        var result = _composer.Compose(CreateSnapshot(root, c1, c2), CreateDetection(idRoot, idC1, idC2));
+        Assert.Single(result);
+        Assert.Equal(100, result[0].PrimaryPid);
+
+        // When root is not present, lowest PID is preferred
+        var resultNoRoot = _composer.Compose(CreateSnapshot(c1, c2), CreateDetection(idC1, idC2));
+        Assert.Single(resultNoRoot);
+        Assert.Equal(200, resultNoRoot[0].PrimaryPid);
+    }
+
+    [Fact]
+    public void Test24_SelectPrimaryPid_ZeroMemoryBeatsNullTelemetry()
+    {
+        var root = CreateProcess(100, "root.exe", localGpu: null);
+        var child = CreateProcess(200, "child.exe", localGpu: 0);
+
+        var idRoot = new AiProcessIdentity(100, AiRuntimeKind.LmStudio, DetectionConfidence.Confirmed, null, DetectionConfidence.None, [], 100);
+        var idChild = new AiProcessIdentity(200, AiRuntimeKind.LmStudio, DetectionConfidence.Medium, null, DetectionConfidence.None, [], 100);
+
+        var result = _composer.Compose(CreateSnapshot(root, child), CreateDetection(idRoot, idChild));
+        Assert.Single(result);
+        Assert.Equal(200, result[0].PrimaryPid);
+        Assert.Equal(0UL, result[0].PrimaryLocalGpuMemoryBytes);
     }
 }
