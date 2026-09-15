@@ -1,0 +1,30 @@
+name: Feature Request
+description: Suggest an enhancement or new runtime detection for Local AI Task Manager
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please keep in mind our core principle: **UNKNOWN > WRONG**. We only add detections when unambiguous, verifiable evidence is available without guessing or polling invasive telemetry.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Is your feature request related to a problem?
+      description: A clear and concise description of what the problem or limitation is.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed Solution or Enhancement
+      description: Describe what you would like to see supported and how it should behave.
+    validations:
+      required: true
+
+  - type: textarea
+    id: technical-context
+    attributes:
+      label: Technical Details or Verification Source
+      description: What official APIs, command lines, or process hierarchies provide verifiable proof for this runtime/workload?

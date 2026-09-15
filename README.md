@@ -1,152 +1,174 @@
 # Local AI Task Manager
 
-Task Manager for Local AI.
+Task Manager for Local AI on Windows.
 
-Local AI Task Manager is an experimental, zero-configuration Windows desktop utility designed to monitor local AI workloads and GPU memory consumption without relying on external servers, CLI wrappers, or `nvidia-smi`.
+See which local AI models are using your GPU, which runtime they belong to, and how much GPU-local memory their primary process is consuming — without relying on external servers, background daemons, or `nvidia-smi`.
+
+![Local AI Task Manager v0.1](docs/assets/local-ai-task-manager-v0.1.png)
+
+---
+
+## Features
+
+* **Workload-Centric Architecture:** Group disjointed processes (e.g. controller + runner) into clean, first-class AI Workload cards.
+* **WDDM-Accurate GPU Accounting:** Queries real Windows Display Driver Model (WDDM) local video memory allocations per process.
+* **Zero Configuration:** Automatically identifies running models and runtimes without setup or manual tagging.
+* **Comprehensive Telemetry:** Real-time NVIDIA GPU metrics (VRAM, utilization, temperature, power) and system memory usage.
+* **Deep Inspector:** Inspect model configuration (quantization, context length, parameters), workload resource breakdown, and underlying command lines.
+* **Flicker-Free Reconciliation:** Keyed in-place collection reconciliation preserves user selection and scroll state across telemetry cycles.
+* **Unassigned Process Segregation:** Cleanly separates AI workloads from unrelated system and desktop GPU processes (`dwm.exe`, browsers, IDEs).
+* **100% Offline & Private:** Zero analytics, zero cloud backends, zero background trackers.
+
+---
+
+## Supported Runtimes
+
+| Runtime | Runtime Detection | Model Detection | Status |
+| :--- | :---: | :---: | :--- |
+| **Ollama** | Yes | Yes | Supported |
+| **standalone llama.cpp** | Yes | Yes | Supported |
+| **LM Studio** | Experimental | No | Experimental |
 
 > [!NOTE]
-> This repository represents **Phase 3: AI Workload Composition + Product UI**.
+> **UNKNOWN > WRONG Principle:** Local AI Task Manager strictly adheres to the principle of never guessing. If a workload or model cannot be unambiguously attributed with verifiable evidence, it remains classified as `Unknown` rather than displaying speculative information.
 
-<!-- ASCII UI Mockup -->
+---
+
+## Download
+
+Get the latest release for **Windows 10/11 (x64)**:
+
+* [Download Local AI Task Manager v0.1.0](https://github.com/AlejandroDeBlas/local-ai-task-manager/releases)
+
+Distributed as an unsigned, portable single-file executable inside a standalone ZIP archive (`LocalAITaskManager-v0.1.0-win-x64.zip`). No installer, registry changes, or administrator permissions required.
+
+---
+
+## Quick Start
+
+1. Download `LocalAITaskManager-v0.1.0-win-x64.zip` from GitHub Releases.
+2. Extract the archive to any folder.
+3. Run `LocalAITaskManager.exe`.
+4. Launch your local AI models using your preferred runtime (e.g. `ollama run qwen2.5:1.5b` or `llama-server.exe -m model.gguf`).
+
+> [!TIP]
+> **Windows SmartScreen:** Windows SmartScreen may display an informational notice because this unsigned, open-source binary is newly published. You can verify the published SHA256 checksum or build directly from source.
+
+---
+
+## How It Works
+
+Local AI Task Manager operates across three cleanly separated architectural layers:
+
 ```text
-┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ Local AI Task Manager                                                                           │
-│ Task Manager for Local AI                                                                       │
-│                                                                                                 │
-│ NVIDIA GeForce RTX 3080 Ti • Driver 552.22  │ VRAM [██████████████░░░] 12.8 / 16.0 GB           │
-│ UTIL 42%   TEMP 58°C   POWER 185W   RAM 18.2 / 31.8 GB                                          │
-├────────────────────────────────────────────────────────┬────────────────────────────────────────┤
-│ AI WORKLOADS (2 active)                                │ INSPECTOR                              │
-│ ┌────────────────────────────────────────────────────┐ │ Qwen2.5 14B Q4_K_M                     │
-│ │ Qwen2.5 14B Q4_K_M                        10.8 GB  │ │ Runtime: Ollama (Confidence: Confirmed)│
-│ │ [Ollama] [Q4_K_M] [Context 32K]                    │ │                                        │
-│ │ 2 processes • PID 46588      RAM: 1.2 GB  CPU: 0.4%│ │ MODEL CONFIGURATION                    │
-│ └────────────────────────────────────────────────────┘ │ Quantization: Q4_K_M                   │
-│ ┌────────────────────────────────────────────────────┐ │ Context: 32,768 tokens                 │
-│ │ LM Studio                                   1.4 GB │ │                                        │
-│ │ [LM Studio • Experimental] [Model detection unavail]│ WORKLOAD RESOURCES                     │
-│ │ 1 process • PID 32110        RAM: 620 MB  CPU: 0.1%│ │ Primary VRAM: 10.8 GB (WDDM Local)     │
-│ └────────────────────────────────────────────────────┘ │ Working Set: 1.2 GB                    │
-│                                                        │                                        │
-│ OTHER GPU PROCESSES (3 processes)                      │ Workload Processes:                    │
-│ Process              PID       VRAM        RAM    CPU  │ • ollama_llama_server.exe (PID 46588)  │
-│ dwm.exe             1276     389 MB     150 MB   1.2%  │ • ollama.exe (PID 1240)                │
-│ chrome.exe         14200     220 MB     840 MB   0.5%  │                                        │
-└────────────────────────────────────────────────────────┴────────────────────────────────────────┘
+LocalAITaskManager.App (WPF GUI, ViewModels, Dispatcher orchestration)
+         │
+         ▼
+LocalAITaskManager.Windows (P/Invoke, NVML, PDH, Win32 RAM, Process ancestry, Workload Detectors)
+         │
+         ▼
+LocalAITaskManager.Core (Domain entities, abstractions, formatters, pure logic)
 ```
 
-## Feature Status
-
-### Supported
-
-**Hardware:**
-* NVIDIA / Windows (NVML + WDDM PDH)
-
-**Workload Composition & Product UI:**
-* AI Workloads as primary top-level domain entities
-* Separation of AI workloads from unassigned `OTHER GPU PROCESSES`
-* Dual Inspector pane: Workload metadata + inspected process command-line / WDDM breakdown
-* Smooth, flicker-free keyed collection reconciliation preserving user selections
-
-**Runtime Detection:**
-* standalone `llama.cpp` / `llama-server`
-* `Ollama`
-* `LM Studio` (experimental runtime / model detection not validated)
-
-**Model Detection:**
-* `llama.cpp`: direct `-m` / `--model`, `-c` / `--ctx-size`, GGUF filename quantization inference (`High` confidence with structural flags, `Medium` for executable-only)
-* `Ollama`: official local loopback `/api/ps` endpoint (model, quantization, parameters, context, VRAM size; cache invalidated instantly on runner PID set changes)
-* `LM Studio`: model detection not validated / disabled (process identified, model left unassigned per UNKNOWN > WRONG)
-
-### Not Yet (Future Phases)
-* ComfyUI
-* Generic Python/CUDA classification
-* Tokens/s (prefill, decode, TTFT)
-* KV cache memory breakdown
-* Weights vs runtime memory breakdown
-* AMD / Intel
+1. **Hardware Telemetry:** Direct P/Invoke bindings to NVIDIA Management Library (`nvml.dll`) query device health, temperature, power, and overall adapter memory.
+2. **Process GPU Memory:** Windows Performance Data Helper (`pdh.dll`) samples kernel-managed `\GPU Process Memory(*)` counters to measure true resident local memory.
+3. **Runtime & Model Correlation:**
+   - **Ollama:** Detects process ancestry descending from `ollama.exe` and interrogates the official loopback endpoint (`GET http://127.0.0.1:11434/api/ps`). Cached responses are instantly invalidated whenever the runner PID set changes.
+   - **standalone llama.cpp:** Inspects native command-line tokens via `CommandLineToArgvW` to capture `-m`/`--model`, `-c`/`--ctx-size`, and infers GGUF quantization patterns.
+   - **LM Studio:** Detects runtime process ancestry. Model correlation is deliberately disabled until verified, daemon-less introspection APIs become available.
 
 ---
 
-## Principle: UNKNOWN > WRONG
+## Memory Semantics
 
-Local AI Task Manager strictly adheres to the principle of never guessing. If an AI workload cannot be unambiguously attributed to a specific model or runtime with verifiable evidence, it remains classified as `Unknown` rather than displaying speculative information.
+Under standard Windows desktop operation, NVIDIA GPUs function under the **Windows Display Driver Model (WDDM)**. Under WDDM, the Windows Kernel Mode Driver (`dxgkrnl.sys`) is the authoritative arbiter of video memory allocations, and NVML per-process metrics (`nvmlProcessInfo_t.usedGpuMemory`) return `NVML_VALUE_NOT_AVAILABLE`.
 
----
-
-## Source-of-Truth Hierarchy
-
-| Target | Runtime Identity | Model Metadata | GPU Memory |
-| :--- | :--- | :--- | :--- |
-| **Ollama** | Process ancestry (`ollama.exe`), executable path (`...\Ollama\lib\...`) | Official loopback API `GET /api/ps` (runner PID set invalidated cache) | Windows WDDM Local Usage |
-| **LM Studio** | Process ancestry, executable path (`...\LM Studio\...`) | *Not validated / disabled* (model unassigned) | Windows WDDM Local Usage |
-| **standalone llama.cpp** | Executable name (`llama-server.exe`, `llama-cli.exe`) + structural flags | `-m` / `--model` arguments, `-c` context, filename quantization inference | Windows WDDM Local Usage |
+To report accurate process memory, Local AI Task Manager tracks:
+* **Primary VRAM (WDDM Local Usage):** Memory currently resident on the dedicated physical video memory of the GPU adapter for the primary workload process.
+* **Non-Local Usage:** Video memory allocated on behalf of the process residing in system RAM.
+* **Total Committed:** Total virtual video memory committed by the Windows video memory manager.
 
 ---
-
-## Features & Telemetry Sources
-
-| Metric | Source |
-| :--- | :--- |
-| GPU name | NVML (`nvmlDeviceGetName`) |
-| Global total/used VRAM | NVML (`nvmlDeviceGetMemoryInfo`) |
-| GPU utilization | NVML (`nvmlDeviceGetUtilizationRates`) |
-| Temperature | NVML (`nvmlDeviceGetTemperature`) |
-| Power | NVML (`nvmlDeviceGetPowerUsage`) |
-| Process local GPU memory | Windows PDH (`\GPU Process Memory(*)\Local Usage`) |
-| Process non-local GPU memory | Windows PDH (`\GPU Process Memory(*)\Non Local Usage`) |
-| Process total committed | Windows PDH (`\GPU Process Memory(*)\Total Committed`) |
-| Process dedicated usage | Windows PDH (`\GPU Process Memory(*)\Dedicated Usage`) |
-| Process shared usage | Windows PDH (`\GPU Process Memory(*)\Shared Usage`) |
-| System RAM | Win32 (`GlobalMemoryStatusEx`) |
-| Process RAM | Win32 / .NET (`Process.WorkingSet64`) |
-| Process CPU | Calculated from `Process.TotalProcessorTime` deltas |
-| Command line | WMI (`Win32_Process.CommandLine`) with PID caching |
-
-## WDDM Memory Semantics & Primary "VRAM" Metric
-
-The workload cards and other GPU process rows use WDDM **Local Usage** (`\GPU Process Memory(*)\Local Usage`) as their primary VRAM metric. For multi-process AI workloads, the workload card displays the primary model process's local memory usage (`PrimaryLocalGpuMemoryBytes`) rather than summing member allocations (since WDDM process-level allocations are not strictly additive and can double-count shared mappings).
-
-Per-process Local Usage values should not be expected to sum exactly to NVML's global Used VRAM because the two APIs expose different accounting scopes and WDDM may involve shared allocations, driver allocations, and timing differences between sampling intervals.
-
-Under Windows WDDM, `Local Usage` represents memory physically resident on the discrete GPU adapter, while `Non Local Usage` represents memory paged out or located in system memory. `Dedicated Usage`, `Shared Usage`, and `Total Committed` are tracked separately and available in the process inspector panel.
 
 ## Privacy & Security
 
-* **Zero external telemetry**: No data collection, analytics, or outbound internet traffic.
-* **Loopback-only probing**: The Ollama client strictly communicates with `http://127.0.0.1:11434/api/ps` with short timeouts (500ms) and no proxies.
-* **Controlled subprocess execution**: Subprocess execution for unvalidated tools is deactivated to prevent launching unauthorized background daemons or triggering unexpected side-effects.
-* **No command line exposure**: Arguments and sensitive file paths are never written to disk, sent across networks, or exposed beyond the local inspector.
+* **Zero Telemetry:** No analytics, tracking, or network telemetry of any kind.
+* **No Cloud Backend:** The application does not contact external servers or remote endpoints.
+* **Localhost Loopback Only:** The only network socket opened is a local HTTP query to `127.0.0.1:11434/api/ps` for Ollama introspection.
+* **In-Memory Operation:** Process command lines and executable paths are inspected transiently in memory and never written to disk or logged.
+* **Trusted Library Loading:** `nvml.dll` is strictly resolved from trusted system directories (`System32` and `Program Files\NVIDIA Corporation\NVSMI`).
+* **Standard User Privileges:** Runs as a standard user process (`asInvoker`) without requiring administrative elevation.
 
-## Building & Running
+---
+
+## Known Limitations
+
+* Supported exclusively on **Windows 10 / 11 (x64)** with **NVIDIA GPUs** (standard drivers installed).
+* AMD (ROCm/DirectML) and Intel (oneAPI) GPUs are not supported in v0.1.0.
+* Per-process multi-GPU adapter mapping via DXGI LUID is planned for future releases.
+* LM Studio model introspection is disabled pending official support.
+* Live inference speed (tokens/s, time-to-first-token) and KV cache breakdowns are not yet implemented.
+
+---
+
+## Build from Source
 
 ### Prerequisites
 
-* Windows 10/11 x64
-* .NET 10.0 SDK
-* NVIDIA GPU with driver installed
+* Windows 10 / 11 (x64)
+* [.NET 10.0 SDK](https://dotnet.microsoft.com/download) or later
+* Git
 
-### Build
+### Build & Test
 
 ```powershell
+# Clone the repository
+git clone https://github.com/AlejandroDeBlas/local-ai-task-manager.git
+cd local-ai-task-manager
+
+# Restore and compile
 dotnet restore
 dotnet build LocalAITaskManager.sln -c Release --no-restore
-```
 
-### Run
-
-```powershell
-dotnet run --project src/LocalAITaskManager.App -c Release
-```
-
-### Run Tests
-
-```powershell
+# Run automated test suite
 dotnet test LocalAITaskManager.sln -c Release --no-build
+
+# Verify code style and formatting
+dotnet format LocalAITaskManager.sln --verify-no-changes
 ```
 
-### Publish Single-File Executable
+### Packaging
+
+To build the self-contained single-file executable and release package:
 
 ```powershell
-.\scripts\publish.ps1
+.\scripts\release.ps1 -Version 0.1.0
 ```
+
+Outputs are staged in `artifacts/release/v0.1.0/`.
+
+---
+
+## Contributing
+
+Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on code style, testing, and our **UNKNOWN > WRONG** verification policy.
+
+---
+
+## Roadmap
+
+Planned for upcoming releases:
+
+- [ ] **v0.2.0:**
+  - Token generation speed (decode tokens/s, prefill tokens/s, TTFT)
+  - Memory breakdown (Model weights vs. KV cache vs. runtime overhead)
+  - AMD Radeon support (DirectML / WDDM)
+  - Multi-GPU per-device process allocation mapping
+  - ComfyUI & vLLM runtime detection
+  - Optional system tray icon and minimize-to-tray
+
+---
+
+## License
+
+Distributed under the **MIT License**. See [LICENSE](LICENSE) for full text.

@@ -1,0 +1,67 @@
+name: Bug Report
+description: Report an issue or unexpected behavior in Local AI Task Manager
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting a problem!
+        **Security notice:** Do NOT paste API keys, tokens, or private/confidential command-line arguments.
+
+  - type: input
+    id: app-version
+    attributes:
+      label: Application Version
+      description: What version of Local AI Task Manager are you using? (e.g., v0.1.0)
+      placeholder: v0.1.0
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Windows version, GPU model, and NVIDIA driver version.
+      placeholder: Windows 11 24H2, NVIDIA GeForce RTX 4070 Ti SUPER, Driver 572.16
+    validations:
+      required: true
+
+  - type: dropdown
+    id: runtime
+    attributes:
+      label: AI Runtime Involved
+      description: Which runtime was running when the issue occurred?
+      options:
+        - Ollama
+        - standalone llama.cpp / llama-server
+        - LM Studio
+        - None / General GPU monitoring
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Problem Description
+      description: Describe what happened and how it differs from what you expected.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: Step-by-step instructions to reproduce the issue.
+      placeholder: |
+        1. Start Ollama with 'ollama run qwen2.5:1.5b'
+        2. Launch LocalAITaskManager.exe
+        3. Observe...
+    validations:
+      required: true
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots or Error Details
+      description: Attach screenshots of the window or relevant details (ensure sensitive paths are redacted).

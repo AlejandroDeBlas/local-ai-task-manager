@@ -1,0 +1,22 @@
+Local AI Task Manager v{{VERSION}}
+Task Manager for Local AI on Windows
+
+QUICK START:
+1. Run LocalAITaskManager.exe.
+2. No installation, accounts, or administrator privileges required.
+3. Requires an NVIDIA GPU with standard drivers installed.
+4. Automatically detects supported local AI runtimes (Ollama, llama.cpp) when active.
+
+WINDOWS SMARTSCREEN NOTE:
+Windows SmartScreen may display an informational alert because this unsigned,
+open-source binary is newly published. You can verify the SHA256 checksum and
+inspect or build the source code locally from:
+https://github.com/AlejandroDeBlas/local-ai-task-manager
+
+SECURITY & PRIVACY:
+- 100% offline local monitoring.
+- Zero analytics, zero telemetry, zero cloud backends.
+- Only network access is loopback querying of local Ollama API (http://127.0.0.1:11434/api/ps).
+
+LICENSE:
+See LICENSE file (MIT License).

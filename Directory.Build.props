@@ -7,5 +7,21 @@
     <AnalysisLevel>latest</AnalysisLevel>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <LangVersion>13.0</LangVersion>
+
+    <!-- Centralized Versioning -->
+    <Version>0.1.0</Version>
+    <AssemblyVersion>0.1.0.0</AssemblyVersion>
+    <FileVersion>0.1.0.0</FileVersion>
+    <InformationalVersion>0.1.0</InformationalVersion>
+
+    <!-- Assembly & Product Metadata -->
+    <Product>Local AI Task Manager</Product>
+    <Description>Task Manager for Local AI on Windows</Description>
+    <Authors>Alejandro De Blas</Authors>
+    <Company>Local AI Task Manager</Company>
+    <Copyright>Copyright (c) 2026 Alejandro De Blas and Contributors</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/AlejandroDeBlas/local-ai-task-manager</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
   </PropertyGroup>
 </Project>

@@ -38,4 +38,7 @@ dotnet format LocalAITaskManager.sln --verify-no-changes
 * Target `main`.
 * Ensure builds, tests, and formatting checks pass.
 * Keep PRs scoped to single, coherent improvements.
+* Adhere strictly to the **UNKNOWN > WRONG** principle: we never guess or display speculative model/runtime identities. Evidence must be verifiable and deterministic.
 * Avoid adding runtime dependencies, subprocess invocations (e.g. `nvidia-smi`), or elevated permission requirements.
+* Zero external network access: no analytics, no telemetry, no cloud services.
+* Consult [`docs/architecture.md`](docs/architecture.md) for details on domain models, telemetric sources, and composition semantics.
