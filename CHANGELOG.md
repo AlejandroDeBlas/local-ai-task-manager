@@ -13,9 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Real-time GPU telemetry via official NVIDIA Management Library (`nvml.dll`): device name, driver version, total/used VRAM, GPU utilization, temperature, power draw.
   - Windows memory statistics via `GlobalMemoryStatusEx`.
 
-- **WDDM Per-Process GPU Memory Accounting:**
-  - True Windows Display Driver Model (WDDM) memory metrics via Performance Data Helper (`\GPU Process Memory(*)`).
-  - Accurate accounting of `Local Usage` (resident GPU adapter memory), `Non Local Usage`, `Total Committed`, and `Shared Usage`.
+- **Windows WDDM Per-Process GPU Memory:**
+  - Windows Display Driver Model (WDDM) memory metrics via Performance Data Helper (`\GPU Process Memory(*)`).
+  - Windows WDDM per-process memory counters for `Local Usage` (GPU-local memory reported by WDDM), `Non Local Usage`, `Total Committed`, and `Shared Usage`.
   - Process CPU calculation using relative kernel and user execution time sampling.
 
 - **AI Runtime & Model Detection:**

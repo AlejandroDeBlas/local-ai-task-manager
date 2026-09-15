@@ -5,10 +5,10 @@ First public release of **Local AI Task Manager** — a zero-configuration Windo
 ## Highlights
 
 - **Workload-Centric Monitoring:** Displays AI models and runtimes as primary cards rather than raw, disjointed process IDs.
-- **WDDM-Accurate GPU Memory:** Inspects real Windows Display Driver Model (WDDM) local video memory allocations per process, avoiding misleading metrics.
+- **Windows WDDM Per-Process GPU Memory:** Inspects Windows Display Driver Model (WDDM) local video memory counters per process, using Local Usage as the primary metric.
 - **Zero Configuration:** Automatically discovers running instances of supported runtimes without daemons, agents, or CLI wrappers.
 - **Dual Inspector:** Deep-dive into workload configuration, quantization, context size, and individual member processes.
-- **Completely Private & Offline:** 100% local operation with zero telemetry, zero analytics, and no cloud backends.
+- **Completely Private:** No external network communication, zero telemetry, zero analytics, and no cloud backends. Only local loopback querying to Ollama on 127.0.0.1.
 
 ## Supported Runtimes
 
@@ -43,11 +43,16 @@ First public release of **Local AI Task Manager** — a zero-configuration Windo
 - LM Studio model introspection is disabled pending official daemon-less support.
 
 ## SHA256 Verification
-
+ 
 To verify the integrity of your download:
 
 ```powershell
-Get-FileHash -Algorithm SHA256 LocalAITaskManager-v0.1.0-win-x64.zip
+Get-FileHash -Algorithm SHA256 .\LocalAITaskManager-v0.1.0-win-x64.zip
 ```
 
-Expected hash matches `LocalAITaskManager-v0.1.0-win-x64.zip.sha256`.
+Expected checksum:
+```text
+298638566f5bfd59ceb10b07d8fc5c613a3304dd8b20c8e1fdead66c3de382d4
+```
+
+You can also verify against the published asset checksum file `LocalAITaskManager-v0.1.0-win-x64.zip.sha256`.

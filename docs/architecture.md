@@ -124,9 +124,9 @@ On Windows desktop systems using standard GeForce and RTX drivers, the GPU opera
 As officially documented in NVIDIA's NVML API documentation:
 > Under Windows WDDM mode, `nvmlProcessInfo_t.usedGpuMemory` is reported as `NVML_VALUE_NOT_AVAILABLE` because memory management is handled by Windows KMD.
 
-To obtain accurate, per-process GPU memory without requiring elevated privileges, **Local AI Task Manager** queries the Windows Performance Data Helper (PDH) counter set `\GPU Process Memory(*)`:
-* **`Local Usage` (Primary process "VRAM" metric):** Memory currently resident on the local video memory of the GPU adapter.
-* **`Non Local Usage`:** Memory allocated by or on behalf of the process residing outside the GPU adapter's local memory (e.g. system RAM).
-* **`Total Committed`:** Total virtual video memory currently committed by the video memory manager for this process.
+To obtain per-process GPU memory metrics without requiring elevated privileges, **Local AI Task Manager** queries the Windows Performance Data Helper (PDH) counter set `\GPU Process Memory(*)`:
+* **`Local Usage` (Primary process VRAM metric):** GPU-local video memory reported by Windows WDDM for the primary process.
+* **`Non Local Usage`:** Video memory allocated by or on behalf of the process residing outside the GPU adapter's local memory (e.g. system RAM).
+* **`Total Committed`:** Total virtual video memory currently committed by the Windows video memory manager for this process.
 * **`Dedicated Usage`:** Dedicated memory allocated across the process lifetime.
 * **`Shared Usage`:** System memory shared with the GPU.
